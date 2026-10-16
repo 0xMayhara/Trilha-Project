@@ -1,0 +1,7 @@
+# Supply-chain controls (SPEC-0001 SEC-23).
+# Do not install versions published less than a day ago.
+minimumReleaseAge: 1440
+# Dependency install scripts are blocked unless explicitly allowed here.
+allowBuilds:
+  # Ships prebuilt binaries through optional dependencies; its postinstall fallback is not needed.
+  unrs-resolver: false

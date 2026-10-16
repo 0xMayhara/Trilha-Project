@@ -1,0 +1,144 @@
+# Platform stack (SPEC-0001). Only the proxy publishes a port (SEC-16, SEC-18).
+# Every container runs without root, without capabilities and without privilege escalation (SEC-17).
+
+x-hardening: &hardening
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+
+x-backend-environment: &backend-environment
+  DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings.prod}
+  DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set DJANGO_SECRET_KEY in .env}
+  DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:?set DJANGO_ALLOWED_HOSTS in .env}
+  DJANGO_LOG_LEVEL: ${DJANGO_LOG_LEVEL:-INFO}
+  POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+  POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+  POSTGRES_HOST: db
+  POSTGRES_SSLMODE: disable
+  REDIS_HOST: redis
+  REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+
+x-backend: &backend
+  <<: *hardening
+  build: ./backend
+  image: trilha-backend:local
+  environment: *backend-environment
+  read_only: true
+  tmpfs: [/tmp]
+
+services:
+  proxy:
+    <<: *hardening
+    image: docker.io/nginxinc/nginx-unprivileged:stable-alpine@sha256:782bb89768cc87b7f95c18b95baa1af250e5d451f26794f59363540161147c01
+    ports:
+      - "${PROXY_BIND:-127.0.0.1}:${PROXY_PORT:-8080}:8080"
+    environment:
+      NGINX_SERVER_NAME: ${NGINX_SERVER_NAME:?set NGINX_SERVER_NAME in .env}
+    volumes:
+      # "z" relabels bind mounts on SELinux hosts and is ignored elsewhere.
+      - ./deploy/nginx/templates:/etc/nginx/templates:ro,z
+    read_only: true
+    # Writable by the unprivileged nginx user, which renders its config here at start-up.
+    tmpfs: [/tmp, "/etc/nginx/conf.d:mode=1777"]
+    depends_on:
+      backend: {condition: service_healthy}
+      frontend: {condition: service_healthy}
+    networks: [app]
+
+  frontend:
+    <<: *hardening
+    build: ./frontend
+    image: trilha-frontend:local
+    read_only: true
+    tmpfs: [/tmp, "/app/.next/cache:mode=1777"]
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks: [app]
+
+  migrate:
+    <<: *backend
+    command: ["python", "manage.py", "migrate", "--noinput"]
+    restart: "no"
+    depends_on:
+      db: {condition: service_healthy}
+    networks: [data]
+
+  backend:
+    <<: *backend
+    healthcheck: &readiness
+      test: ["CMD", "python", "manage.py", "check_ready"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    networks: [app, data]
+
+  worker:
+    <<: *backend
+    command: ["celery", "--app", "config", "worker", "--loglevel", "INFO", "--concurrency", "2"]
+    healthcheck: *readiness
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    networks: [data]
+
+  db:
+    <<: *hardening
+    image: docker.io/library/postgres:18-trixie@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
+    user: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set POSTGRES_SUPERUSER_PASSWORD in .env}
+      POSTGRES_DB: postgres
+      APP_DB_NAME: ${POSTGRES_DB}
+      APP_DB_USER: ${POSTGRES_USER}
+      APP_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - db-data:/var/lib/postgresql
+      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro,z
+    healthcheck:
+      test: ["CMD", "pg_isready", "--username", "postgres", "--dbname", "postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [data]
+
+  redis:
+    <<: *hardening
+    image: docker.io/library/redis:8-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
+    user: redis
+    # The password is visible only to processes inside this container.
+    command: ["sh", "-c", 'exec redis-server --requirepass "$$REDIS_PASSWORD" --appendonly yes']
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [data]
+
+networks:
+  # Proxy, frontend and backend.
+  app: {}
+  # Database and broker: no route to the outside world.
+  data:
+    internal: true
+
+volumes:
+  db-data: {}
+  redis-data: {}
