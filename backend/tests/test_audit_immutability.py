@@ -78,6 +78,25 @@ def test_queryset_update_and_delete_are_rejected_cwe_471(
     _assert_unchanged(event)
 
 
+def test_upsert_through_bulk_create_is_rejected_cwe_471(event, django_assert_num_queries):
+    forged = AuditEvent(
+        event_id=event.event_id,
+        actor_type="system",
+        actor_label="attacker",
+        action="tests.event_rewritten",
+        source="command",
+    )
+
+    with django_assert_num_queries(0), pytest.raises(AuditEventImmutable):
+        AuditEvent.objects.bulk_create(
+            [forged],
+            update_conflicts=True,
+            update_fields=["actor_label", "action"],
+            unique_fields=["event_id"],
+        )
+    _assert_unchanged(event)
+
+
 @pytest.mark.parametrize(
     "statement",
     [

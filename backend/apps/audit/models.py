@@ -62,6 +62,20 @@ class AuditEventQuerySet(models.QuerySet):
     def bulk_update(self, objs: Any, fields: Any, batch_size: int | None = None) -> NoReturn:
         reject_tamper("queryset.bulk_update")
 
+    def bulk_create(
+        self,
+        objs: Any,
+        batch_size: int | None = None,
+        ignore_conflicts: bool = False,
+        update_conflicts: bool = False,
+        update_fields: Any = None,
+        unique_fields: Any = None,
+    ) -> list["AuditEvent"]:
+        # INSERT ... ON CONFLICT DO UPDATE would rewrite existing events.
+        if update_conflicts:
+            reject_tamper("queryset.bulk_create(update_conflicts)")
+        return super().bulk_create(objs, batch_size=batch_size, ignore_conflicts=ignore_conflicts)
+
 
 class AuditEvent(models.Model):
     id = models.BigAutoField(primary_key=True)
