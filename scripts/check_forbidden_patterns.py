@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Reject known-dangerous patterns in tracked files (CLAUDE.md §22, SPEC-0001 SEC-08/21/22)."""
+"""Reject known-dangerous patterns in tracked files (CLAUDE.md §22, SPEC-0001 SEC-08/21/22).
+
+Fails closed: an empty list of tracked files is a violation.
+"""
 
 import re
 import subprocess
@@ -31,21 +34,42 @@ RULES = [
 ]
 
 
-def main() -> int:
-    tracked = subprocess.run(
+def rules_for(path: str) -> list[tuple[str, str]]:
+    return [
+        (pattern, reason)
+        for prefix, suffixes, pattern, reason in RULES
+        if path.startswith(prefix) and path.endswith(suffixes)
+    ]
+
+
+def check_file(path: str, text: str) -> list[str]:
+    errors = []
+    for pattern, reason in rules_for(path):
+        for number, line in enumerate(text.splitlines(), start=1):
+            if re.search(pattern, line):
+                errors.append(f"{path}:{number}: {reason}")
+    return errors
+
+
+def tracked_files() -> list[str]:
+    return subprocess.run(
         ["git", "ls-files"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
     ).stdout.splitlines()
+
+
+def check_tracked(paths: list[str]) -> list[str]:
+    if not paths:
+        return ["no tracked files to scan"]
     errors = []
-    for path in tracked:
-        if path == SELF:
+    for path in paths:
+        if path == SELF or not rules_for(path):
             continue
-        for prefix, suffixes, pattern, reason in RULES:
-            if not path.startswith(prefix) or not path.endswith(suffixes):
-                continue
-            text = (REPO_ROOT / path).read_text(errors="replace")
-            for number, line in enumerate(text.splitlines(), start=1):
-                if re.search(pattern, line):
-                    errors.append(f"{path}:{number}: {reason}")
+        errors.extend(check_file(path, (REPO_ROOT / path).read_text(errors="replace")))
+    return errors
+
+
+def main() -> int:
+    errors = check_tracked(tracked_files())
     for error in errors:
         print(f"policy violation: {error}", file=sys.stderr)
     if not errors:
