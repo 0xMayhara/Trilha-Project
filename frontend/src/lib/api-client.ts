@@ -35,7 +35,12 @@ export function readCookie(name: string, cookies?: string): string | undefined {
   for (const part of source.split(";")) {
     const [rawName, ...rawValue] = part.trim().split("=");
     if (rawName === name) {
-      return decodeURIComponent(rawValue.join("="));
+      try {
+        return decodeURIComponent(rawValue.join("="));
+      } catch {
+        // A malformed cookie (e.g. injected from a sibling domain) must not break every request.
+        return undefined;
+      }
     }
   }
   return undefined;

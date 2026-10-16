@@ -110,4 +110,8 @@ describe("readCookie", () => {
   it("returns undefined for a missing cookie", () => {
     expect(readCookie("csrftoken", "theme=dark")).toBeUndefined();
   });
+
+  it("returns undefined for a malformed cookie value instead of throwing (CWE-755)", () => {
+    expect(readCookie("csrftoken", "csrftoken=%E0%A4%A")).toBeUndefined();
+  });
 });
