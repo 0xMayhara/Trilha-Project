@@ -1,9 +1,13 @@
+import ipaddress
+import logging
 from collections.abc import Callable
 
 from django.http import HttpRequest, HttpResponse
 
 from apps.audit.context import http_context
 from apps.core.http import client_ip
+
+logger = logging.getLogger("apps.audit")
 
 
 class AuditContextMiddleware:
@@ -14,5 +18,18 @@ class AuditContextMiddleware:
         self.get_response = get_response
 
     def __call__(self, request: HttpRequest) -> HttpResponse:
-        with http_context(client_ip(request)):
+        with http_context(_valid_ip(client_ip(request))):
             return self.get_response(request)
+
+
+def _valid_ip(address: str | None) -> str | None:
+    """The proxy always sends a valid address. Anything else means the proxy was bypassed or
+    misconfigured: record no IP rather than fail every audited operation on the inet column."""
+    if not address:
+        return None
+    try:
+        return str(ipaddress.ip_address(address))
+    except ValueError:
+        # The raw value is attacker-controlled and is not logged.
+        logger.warning("invalid_client_address", extra={"event": "invalid_client_address"})
+        return None

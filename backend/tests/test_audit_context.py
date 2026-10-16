@@ -1,6 +1,7 @@
 """Audit context: source and client IP come from the server, never from the caller
 (SPEC-0002 SEC-07…SEC-09, SEC-19)."""
 
+import logging
 import uuid
 from types import SimpleNamespace
 
@@ -53,6 +54,22 @@ def test_audit_ip_ignores_spoofed_forwarded_for_cwe_348(api_client, user):
 
     event = AuditEvent.objects.get(event_id=response.json()["event_id"])
     assert event.client_ip == "203.0.113.9"
+
+
+@pytest.mark.django_db
+@TEST_URLS
+def test_invalid_client_address_is_not_recorded_cwe_20(api_client, user, caplog):
+    api_client.force_login(user)
+
+    with caplog.at_level(logging.WARNING, logger="apps.audit"):
+        response = api_client.post(AUDITED_URL, HTTP_X_FORWARDED_FOR="not-an-ip\nforged")
+
+    assert response.status_code == 200
+    event = AuditEvent.objects.get(event_id=response.json()["event_id"])
+    assert event.client_ip is None
+    warnings = [r for r in caplog.records if getattr(r, "event", None) == "invalid_client_address"]
+    assert len(warnings) == 1
+    assert "not-an-ip" not in str(vars(warnings[0]))
 
 
 def test_audit_context_is_reset_after_failed_request():
