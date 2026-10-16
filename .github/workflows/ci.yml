@@ -103,6 +103,8 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: false
+      - name: Policy script tests
+        run: python3 -m unittest discover --start-directory scripts/tests --verbose
       - name: Actions are pinned to commit SHAs
         run: python3 scripts/check_actions_pinned.py
       - name: Forbidden patterns
