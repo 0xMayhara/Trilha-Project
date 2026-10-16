@@ -1,6 +1,6 @@
 """Test-only routes exercising the API baseline. Never part of the project URLconf."""
 
-from django.db import OperationalError
+from django.db import OperationalError, transaction
 from django.urls import path
 from rest_framework import serializers
 from rest_framework.generics import GenericAPIView
@@ -9,6 +9,8 @@ from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 
+from apps.audit.services import record_event
+from apps.audit.types import Actor, Resource
 from config.urls import handler400, handler403, handler404, handler500, urlpatterns
 
 __all__ = ["handler400", "handler403", "handler404", "handler500", "urlpatterns"]
@@ -68,6 +70,21 @@ class ThrottledView(APIView):
         return Response({"ok": True})
 
 
+class AuditedView(APIView):
+    """Records one event the way a feature service would (SPEC-0002)."""
+
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request):
+        with transaction.atomic():
+            event = record_event(
+                actor=Actor.for_request_user(request.user),
+                action="tests.item_touched",
+                resource=Resource(type="tests.item", id="1"),
+            )
+        return Response({"event_id": str(event.event_id)})
+
+
 class ItemsView(GenericAPIView):
     permission_classes = (IsAuthenticated,)
 
@@ -85,4 +102,5 @@ urlpatterns = [
     path("api/test/db-down/", DatabaseDownView.as_view()),
     path("api/test/throttled/", ThrottledView.as_view()),
     path("api/test/items/", ItemsView.as_view()),
+    path("api/test/audited/", AuditedView.as_view()),
 ]

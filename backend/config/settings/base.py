@@ -20,10 +20,12 @@ INSTALLED_APPS = [
     "rest_framework",
     "apps.core",
     "apps.accounts",
+    "apps.audit",
 ]
 
 MIDDLEWARE = [
     "apps.core.middleware.RequestIdMiddleware",
+    "apps.audit.middleware.AuditContextMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "apps.core.middleware.SecurityHeadersMiddleware",
     "apps.core.middleware.AccessLogMiddleware",
