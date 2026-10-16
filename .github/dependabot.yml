@@ -1,5 +1,8 @@
 # Dependency update proposals (SPEC-0001 SEC-23). Every update arrives as a reviewed pull request;
 # the cooldown avoids adopting releases in their first days, when malicious versions are typically caught.
+# Major upgrades (and new runtime lines for base images) are deliberate changes with their own
+# justification (CLAUDE.md §2), so version updates stay within the current line. `update-types`
+# filters version updates only: security updates are still proposed.
 version: 2
 updates:
   - package-ecosystem: uv
@@ -8,6 +11,9 @@ updates:
       interval: weekly
     cooldown:
       default-days: 3
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /frontend
@@ -15,16 +21,27 @@ updates:
       interval: weekly
     cooldown:
       default-days: 3
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
+  # Base images track a runtime line through their tag (python 3.13, node 24 LTS, postgres 18);
+  # within a line only the digest changes.
   - package-ecosystem: docker
     directories: [/backend, /frontend]
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   - package-ecosystem: docker-compose
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   - package-ecosystem: github-actions
     directory: /
