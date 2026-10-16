@@ -29,6 +29,8 @@ def _prod_env(**overrides: str | None) -> dict[str, str]:
         "POSTGRES_USER": "trilha",
         "POSTGRES_PASSWORD": secrets.token_urlsafe(24),
         "POSTGRES_HOST": "db",
+        "REDIS_HOST": "redis",
+        "REDIS_PASSWORD": secrets.token_urlsafe(24),
     }
     for name, value in overrides.items():
         if value is None:
@@ -105,6 +107,16 @@ def test_prod_settings_pass_check_deploy():
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_prod_settings_refuse_placeholder_redis_password_cwe_1188():
+    result = _run(
+        ["-c", _DUMP_SETTINGS, "config.settings.prod", "DEBUG"],
+        _prod_env(REDIS_PASSWORD="change-me-redis-password"),
+    )
+
+    assert result.returncode != 0
+    assert "REDIS_PASSWORD" in result.stderr
 
 
 def test_prod_cookie_flags():

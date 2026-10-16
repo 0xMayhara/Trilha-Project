@@ -1,6 +1,7 @@
 """Settings shared by every environment. Values come from environment variables (CLAUDE.md §7)."""
 
 from pathlib import Path
+from urllib.parse import quote
 
 from django.core.exceptions import ImproperlyConfigured
 
@@ -17,11 +18,14 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "rest_framework",
+    "apps.core",
     "apps.accounts",
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "apps.core.middleware.SecurityHeadersMiddleware",
+    "apps.core.middleware.MaxBodySizeMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -45,6 +49,19 @@ DATABASES = {
             "connect_timeout": 5,
             "sslmode": env_str("POSTGRES_SSLMODE", "prefer"),
         },
+    }
+}
+
+REDIS_HOST = env_str("REDIS_HOST")
+REDIS_PORT = env_int("REDIS_PORT", 6379)
+REDIS_PASSWORD = env_str("REDIS_PASSWORD")
+REDIS_BASE_URL = f"redis://:{quote(REDIS_PASSWORD, safe='')}@{REDIS_HOST}:{REDIS_PORT}"
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": f"{REDIS_BASE_URL}/1",
+        "OPTIONS": {"socket_connect_timeout": 2, "socket_timeout": 2},
     }
 }
 
@@ -91,3 +108,25 @@ X_FRAME_OPTIONS = "DENY"
 
 # Request body limit (SPEC-0001 SEC-11).
 DATA_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024
+CSRF_FAILURE_VIEW = "apps.core.views.csrf_failure"
+
+# API baseline (SPEC-0001): deny by default, session auth, JSON only, bounded pages, throttling.
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
+    "DEFAULT_PERMISSION_CLASSES": ["apps.core.api.permissions.DenyAll"],
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
+    "DEFAULT_PAGINATION_CLASS": "apps.core.api.pagination.DefaultPagination",
+    "PAGE_SIZE": 25,
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": env_str("DJANGO_THROTTLE_ANON_RATE", "60/min"),
+        "user": env_str("DJANGO_THROTTLE_USER_RATE", "600/min"),
+    },
+    # Exactly one trusted proxy, which overwrites X-Forwarded-For (SEC-18).
+    "NUM_PROXIES": 1,
+    "EXCEPTION_HANDLER": "apps.core.api.exceptions.exception_handler",
+}

@@ -18,6 +18,7 @@ def _require_strong_secret(name: str, value: str, min_length: int) -> None:
 
 _require_strong_secret("DJANGO_SECRET_KEY", SECRET_KEY, 50)
 _require_strong_secret("POSTGRES_PASSWORD", DATABASES["default"]["PASSWORD"], 16)
+_require_strong_secret("REDIS_PASSWORD", REDIS_PASSWORD, 16)
 
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS")
 
