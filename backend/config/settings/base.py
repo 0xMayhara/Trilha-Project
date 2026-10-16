@@ -23,8 +23,10 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "apps.core.middleware.RequestIdMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "apps.core.middleware.SecurityHeadersMiddleware",
+    "apps.core.middleware.AccessLogMiddleware",
     "apps.core.middleware.MaxBodySizeMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -129,4 +131,28 @@ REST_FRAMEWORK = {
     # Exactly one trusted proxy, which overwrites X-Forwarded-For (SEC-18).
     "NUM_PROXIES": 1,
     "EXCEPTION_HANDLER": "apps.core.api.exceptions.exception_handler",
+}
+
+# Structured JSON logs on stdout (SPEC-0001 SEC-13).
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {"json": {"()": "apps.core.logging.JsonFormatter"}},
+    "handlers": {
+        "stdout": {
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stdout",
+            "formatter": "json",
+        }
+    },
+    "root": {"handlers": ["stdout"], "level": env_str("DJANGO_LOG_LEVEL", "INFO")},
+    "loggers": {
+        # Replace Django's default console/mail handlers; records propagate to root.
+        "django": {"handlers": [], "level": "INFO", "propagate": True},
+        # 4xx responses are already covered by the access log.
+        "django.request": {"level": "ERROR"},
+        "django.security": {"level": "WARNING"},
+        # Never log SQL statements with their parameters.
+        "django.db.backends": {"level": "WARNING"},
+    },
 }
