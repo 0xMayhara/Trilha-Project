@@ -1,0 +1,9 @@
+# Local-only agent tooling and documentation (owner's decision: not versioned)
+.claude/
+docs/
+CLAUDE.md
+
+# Secrets: never commit real environment files (CLAUDE.md §7)
+.env
+.env.*
+!.env.example
