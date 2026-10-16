@@ -16,6 +16,11 @@ ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     HOSTNAME=0.0.0.0 \
     PORT=3000
+# The server only needs node. The package managers shipped with the base image are unused attack
+# surface, and their bundled dependencies carry vulnerabilities that this project cannot patch.
+RUN rm -rf /usr/local/lib/node_modules /opt/yarn-v* \
+    /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+    /usr/local/bin/yarn /usr/local/bin/yarnpkg
 WORKDIR /app
 # Code stays owned by root: the runtime user can read but not modify it.
 COPY --from=build /app/.next/standalone ./
