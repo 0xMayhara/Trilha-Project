@@ -1,0 +1,184 @@
+# CI and security pipeline (SPEC-0001 SEC-22, SEC-23).
+# Public repository: pull requests run untrusted code, so no job receives secrets and the token is
+# read-only. Third-party actions are pinned to commit SHAs; downloaded tools are checksum-verified.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.13.1"
+  PNPM_VERSION: "12.14.0"
+  ZIZMOR_VERSION: "1.31.1"
+  GITLEAKS_VERSION: "8.30.1"
+  GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+  GRYPE_VERSION: "0.120.1"
+  GRYPE_SHA256: 0a9ee97ef5ae2ee953b0a80098105052e846cdbe319a57d808b519c33cd1343d
+
+jobs:
+  backend:
+    name: Backend tests and audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: docker.io/library/postgres:18-trixie@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
+        env:
+          POSTGRES_DB: trilha
+          POSTGRES_USER: trilha
+          POSTGRES_PASSWORD: trilha-test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready --username trilha"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DJANGO_SETTINGS_MODULE: config.settings.test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+      - run: uv sync --locked
+      - name: Lint (includes ruff security rules)
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Migrations are up to date
+        run: uv run python manage.py makemigrations --check --dry-run
+      - name: Tests
+        run: uv run pytest
+      - name: Dependency vulnerabilities
+        run: uv run pip-audit --strict --skip-editable --progress-spinner off
+
+  frontend:
+    name: Frontend tests and audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.node-version
+          package-manager-cache: false
+      # Exact version, registry integrity check, no install scripts. Corepack cannot be used: pnpm 12
+      # ships its native binary as an optional dependency, which corepack does not install.
+      - run: npm install --global --ignore-scripts "pnpm@${PNPM_VERSION}" # zizmor: ignore[adhoc-packages]
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - name: Dependency vulnerabilities
+        run: pnpm audit --prod --audit-level high
+
+  policy:
+    name: Repository and container policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+      - name: Actions are pinned to commit SHAs
+        run: python3 scripts/check_actions_pinned.py
+      - name: Forbidden patterns
+        run: python3 scripts/check_forbidden_patterns.py
+      - name: Compose hardening
+        run: |
+          docker compose --env-file .env.example -f compose.yaml config --format json \
+            | python3 scripts/check_compose_policy.py
+          docker compose --env-file .env.example -f compose.yaml -f compose.dev.yaml \
+            config --format json | python3 scripts/check_compose_policy.py --dev
+      - name: Workflow security lint
+        run: uvx "zizmor@${ZIZMOR_VERSION}" --format plain .github/workflows
+
+  secrets:
+    name: Secret scanning
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install gitleaks (checksum verified)
+        run: |
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl --fail --silent --show-error --location --output "$RUNNER_TEMP/$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/$archive" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" gitleaks
+      - name: Scan full history
+        run: '"$RUNNER_TEMP/gitleaks" git --redact --no-banner --verbose .'
+
+  images:
+    name: Container image scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build images
+        run: |
+          docker build --tag trilha-backend:ci backend
+          docker build --tag trilha-frontend:ci frontend
+      - name: Install grype (checksum verified)
+        run: |
+          archive="grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location --output "$RUNNER_TEMP/$archive" \
+            "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/${archive}"
+          echo "${GRYPE_SHA256}  $RUNNER_TEMP/$archive" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" grype
+      - name: Fail on fixable high or critical vulnerabilities
+        run: |
+          "$RUNNER_TEMP/grype" docker:trilha-backend:ci --only-fixed --fail-on high
+          "$RUNNER_TEMP/grype" docker:trilha-frontend:ci --only-fixed --fail-on high
+
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          queries: security-extended
+      - uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          category: /language:${{ matrix.language }}
