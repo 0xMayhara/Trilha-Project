@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "./api-client";
-import { authErrorMessage, changePassword, fetchSessionUser, logIn, logOut, setPassword } from "./auth";
+import {
+  authErrorMessage,
+  changePassword,
+  fetchSessionUser,
+  logIn,
+  logOut,
+  logoutEndedSession,
+  setPassword,
+} from "./auth";
 
 const user = { id: "6f1d…", username: "alice", first_name: "", last_name: "" };
 
@@ -114,5 +122,20 @@ describe("authErrorMessage", () => {
 
   it("does not trust non-API errors", () => {
     expect(authErrorMessage(new Error("boom"))).toBe("Something went wrong. Try again.");
+  });
+});
+
+describe("logoutEndedSession", () => {
+  it("is true after a successful logout or when there was no session", () => {
+    expect(logoutEndedSession(null)).toBe(true);
+    expect(logoutEndedSession(new ApiError(401, "not_authenticated", "x"))).toBe(true);
+  });
+
+  it.each([
+    ["CSRF rejection", new ApiError(403, "permission_denied", "x")],
+    ["server error", new ApiError(503, "service_unavailable", "x")],
+    ["network failure", new TypeError("Failed to fetch")],
+  ])("is false after a %s, when the session may still be valid", (_name, error) => {
+    expect(logoutEndedSession(error)).toBe(false);
   });
 });

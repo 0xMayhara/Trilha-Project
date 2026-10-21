@@ -4,7 +4,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import { fetchSessionUser, logOut, SESSION_QUERY_KEY } from "@/lib/auth";
+import {
+  authErrorMessage,
+  fetchSessionUser,
+  logOut,
+  logoutEndedSession,
+  SESSION_QUERY_KEY,
+} from "@/lib/auth";
 
 export function AuthNav() {
   const router = useRouter();
@@ -12,7 +18,12 @@ export function AuthNav() {
   const { data: user } = useQuery({ queryKey: SESSION_QUERY_KEY, queryFn: fetchSessionUser });
   const logout = useMutation({
     mutationFn: logOut,
-    onSettled: () => {
+    onSettled: async (_data, error) => {
+      // Show "signed out" only when the server session is gone; otherwise re-read the real state.
+      if (!logoutEndedSession(error)) {
+        await queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY });
+        return;
+      }
       queryClient.setQueryData(SESSION_QUERY_KEY, null);
       router.push("/login");
     },
@@ -42,6 +53,11 @@ export function AuthNav() {
       >
         Log out
       </button>
+      {logout.isError && (
+        <span role="alert" className="text-red-700">
+          {authErrorMessage(logout.error)}
+        </span>
+      )}
     </div>
   );
 }

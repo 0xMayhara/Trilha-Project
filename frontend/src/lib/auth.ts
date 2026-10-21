@@ -47,6 +47,12 @@ export function logOut(): Promise<undefined> {
   return apiFetch("/api/v1/auth/logout/", noContent, { method: "POST" });
 }
 
+/** Whether a logout attempt left no server session: it succeeded, or there was none (401). Any
+ * other failure means the session may still be valid, so the UI must not claim "signed out". */
+export function logoutEndedSession(error: unknown): boolean {
+  return !error || (error instanceof ApiError && error.status === 401);
+}
+
 export function changePassword(currentPassword: string, newPassword: string): Promise<undefined> {
   return apiFetch("/api/v1/auth/password/change/", noContent, {
     method: "POST",
