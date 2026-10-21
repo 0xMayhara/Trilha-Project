@@ -18,6 +18,7 @@ x-backend-environment: &backend-environment
   POSTGRES_SSLMODE: disable
   REDIS_HOST: redis
   REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+  TRILHA_BASE_URL: ${TRILHA_BASE_URL:-http://localhost:8080}
 
 x-backend: &backend
   <<: *hardening

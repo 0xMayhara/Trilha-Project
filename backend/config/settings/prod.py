@@ -31,3 +31,8 @@ SECURE_HSTS_PRELOAD = env_bool("DJANGO_SECURE_HSTS_PRELOAD", True)
 
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
+
+# Set-password links carry one-time tokens: never print them for a plain-HTTP address
+# (SPEC-0003 SEC-23).
+if not TRILHA_BASE_URL.startswith("https://"):
+    raise ImproperlyConfigured("TRILHA_BASE_URL must use https in production.")

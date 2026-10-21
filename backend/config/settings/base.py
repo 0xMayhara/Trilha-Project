@@ -5,7 +5,7 @@ from urllib.parse import quote
 
 from django.core.exceptions import ImproperlyConfigured
 
-from config.env import env_int, env_str
+from config.env import env_int, env_origin, env_str
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -14,12 +14,13 @@ DEBUG = False
 ALLOWED_HOSTS: list[str] = []
 
 INSTALLED_APPS = [
+    # Before django.contrib.auth: its createsuperuser/changepassword overrides must win (SPEC-0003).
+    "apps.accounts",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "rest_framework",
     "apps.core",
-    "apps.accounts",
     "apps.audit",
 ]
 
@@ -119,6 +120,21 @@ SESSION_COOKIE_MAX_AGE_LIMIT = 24 * 60 * 60
 SESSION_COOKIE_AGE = env_int("DJANGO_SESSION_COOKIE_AGE", 8 * 60 * 60)
 if not 0 < SESSION_COOKIE_AGE <= SESSION_COOKIE_MAX_AGE_LIMIT:
     raise ImproperlyConfigured("DJANGO_SESSION_COOKIE_AGE must be between 1 and 86400 seconds.")
+# The cookie ends with the browser; the server still enforces SESSION_COOKIE_AGE (SPEC-0003 BR-08).
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+
+# Set-password links (SPEC-0003 BR-07, SEC-23): one hour by default, five minutes to one day.
+PASSWORD_RESET_TIMEOUT = env_int("DJANGO_PASSWORD_RESET_TIMEOUT", 60 * 60)
+if not 5 * 60 <= PASSWORD_RESET_TIMEOUT <= 24 * 60 * 60:
+    raise ImproperlyConfigured(
+        "DJANGO_PASSWORD_RESET_TIMEOUT must be between 300 and 86400 seconds."
+    )
+# Where users open Trilha. Used to print set-password links, never taken from the Host header.
+TRILHA_BASE_URL = env_origin("TRILHA_BASE_URL", "http://localhost:8080")
+# The proxy forwards Host without the published port, so Django's own guess of the origin
+# (http://localhost) misses the port the browser sends (http://localhost:8080). Trust exactly the
+# configured address; any other Origin is still rejected (SPEC-0003 SEC-03).
+CSRF_TRUSTED_ORIGINS = [TRILHA_BASE_URL]
 
 # Security headers (SPEC-0001 SEC-05).
 SECURE_CONTENT_TYPE_NOSNIFF = True
@@ -145,6 +161,11 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "anon": env_str("DJANGO_THROTTLE_ANON_RATE", "60/min"),
         "user": env_str("DJANGO_THROTTLE_USER_RATE", "600/min"),
+        # Authentication endpoints (SPEC-0003 BR-09). DRF periods are one unit: s, min, hour, day.
+        "login_ip": env_str("DJANGO_THROTTLE_LOGIN_IP_RATE", "10/min"),
+        "login_username": env_str("DJANGO_THROTTLE_LOGIN_USERNAME_RATE", "10/hour"),
+        "password_set": env_str("DJANGO_THROTTLE_PASSWORD_SET_RATE", "10/hour"),
+        "password_change": env_str("DJANGO_THROTTLE_PASSWORD_CHANGE_RATE", "10/hour"),
     },
     # Exactly one trusted proxy, which overwrites X-Forwarded-For (SEC-18).
     "NUM_PROXIES": 1,

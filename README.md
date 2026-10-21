@@ -32,6 +32,32 @@ Open http://localhost:8080. Only the proxy publishes a port, bound to `127.0.0.1
 To reach PostgreSQL and Redis from the host during development, add the override:
 `docker compose -f compose.yaml -f compose.dev.yaml up`.
 
+## Accounts
+
+There is no sign-up and no email. An operator manages accounts with audited commands in the backend
+container:
+
+```sh
+# Create an account. Prints a one-time link where its owner sets a password.
+docker compose exec backend python manage.py accounts_create_user alice --first-name Alice
+# Print a new link for an account whose owner forgot the password.
+docker compose exec backend python manage.py accounts_password_link alice
+# Disable an account: its password is removed and every session ends.
+docker compose exec backend python manage.py accounts_disable_user alice
+# Re-enable it: prints a setup link; the old password never comes back.
+docker compose exec backend python manage.py accounts_enable_user alice
+```
+
+- Usernames are lowercase ASCII: `a-z`, `0-9` and `. _ @ + -`.
+- Commands that issue a link print a JSON log line (no secrets), the link, and a delivery reminder.
+- Send links only through an authorized internal channel.
+  - A link works once and expires after one hour; set `DJANGO_PASSWORD_RESET_TIMEOUT` to change this
+    (300-86400 seconds).
+  - Links start with `TRILHA_BASE_URL`.
+- `createsuperuser` and `changepassword` are disabled because they bypass the audit trail.
+- Sessions last at most 8 hours and end when the browser closes. Remove expired sessions daily, for
+  example from cron: `docker compose exec -T backend python manage.py clearsessions`.
+
 ## Development
 
 Backend (requires [uv](https://docs.astral.sh/uv/) and a PostgreSQL instance for tests):
@@ -59,7 +85,8 @@ pnpm dev                 # pnpm lint | pnpm typecheck | pnpm test | pnpm build
 - Containers run as non-root, without capabilities, with read-only filesystems where possible.
 - CI runs tests, CodeQL, dependency audits, secret scanning, workflow linting and image scanning.
 
-Production deployments must terminate TLS in front of the proxy; that setup is not provided yet.
+Only local use is supported so far. Running Trilha on a network needs TLS for every connection to
+the proxy and separate database owner and runtime roles. Both are planned and not provided yet.
 
 ## Reporting vulnerabilities
 
