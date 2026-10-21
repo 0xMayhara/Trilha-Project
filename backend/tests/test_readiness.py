@@ -2,7 +2,7 @@ from unittest import mock
 
 import pytest
 from django.core.management import CommandError, call_command
-from django.db import OperationalError
+from django.db import OperationalError, close_old_connections, connection
 
 
 @pytest.mark.django_db
@@ -23,3 +23,15 @@ def test_check_ready_fails_without_leaking_error_details():
         call_command("check_ready")
 
     assert str(raised.value) == "Not ready."
+
+
+@pytest.mark.django_db(transaction=True)
+def test_dead_database_connection_is_replaced_before_reuse():
+    # A PostgreSQL restart kills connections kept open by CONN_MAX_AGE (SPEC-0001 Failure Modes).
+    connection.ensure_connection()
+    connection.connection.close()
+    close_old_connections()  # request boundary
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT 1")
+        assert cursor.fetchone() == (1,)
