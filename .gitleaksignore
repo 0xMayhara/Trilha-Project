@@ -3,3 +3,6 @@
 # repository history and local files show no real-credential source or use.
 # Suppress only this historical finding; keep the rule and authentication tests scanned.
 6902de8f820ece539e7ff87005d55642c618f2ba:backend/tests/test_auth_security.py:generic-api-key:173
+
+# The same synthetic SPEC-0003 canary after PR #13 was squash-merged into main.
+95a6ef11266ff59c5d2cad73d95d51d2da43c09b:backend/tests/test_auth_security.py:generic-api-key:173

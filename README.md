@@ -58,6 +58,33 @@ docker compose exec backend python manage.py accounts_enable_user alice
 - Sessions last at most 8 hours and end when the browser closes. Remove expired sessions daily, for
   example from cron: `docker compose exec -T backend python manage.py clearsessions`.
 
+## Teams and roles
+
+Access is granted per team: a user sees a team only through a role assigned in that team, and a role
+held in one team never grants anything in another. Existing users start with no access. Configure it
+with audited commands in the backend container:
+
+```sh
+# Create a team (it starts inactive) and a reusable role, then give the role a permission.
+docker compose exec backend python manage.py teams_create soc --name "Security Operations"
+docker compose exec backend python manage.py rbac_create_role reader --name Reader
+docker compose exec backend python manage.py rbac_grant_permission reader teams.view_team
+# Add a member and assign the role in that team.
+docker compose exec backend python manage.py teams_add_member soc alice
+docker compose exec backend python manage.py rbac_assign_role soc alice reader
+# Activate: prints what will be restored and asks you to type the team code.
+docker compose exec backend python manage.py teams_activate soc
+```
+
+- Revoke with `rbac_revoke_role`, `rbac_revoke_permission`, `teams_remove_member` or
+  `teams_deactivate`. Changes apply to the next request; users stay signed in.
+- Removing a member drops their role assignments. Adding them again starts with no roles.
+- Deactivating keeps the configuration. Reactivating restores it: review the printed counts before
+  you confirm. Activation needs an interactive terminal (do not pass `-T`) and has no `--yes`.
+- A role is shared: changing its permissions changes them in every team that assigns it.
+- Inspect with `teams_list`, `teams_members <team>`, `rbac_list_roles` and `rbac_list_permissions`.
+- Users see their own access at `/account/access`.
+
 ## Development
 
 Backend (requires [uv](https://docs.astral.sh/uv/) and a PostgreSQL instance for tests):
