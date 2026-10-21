@@ -5,7 +5,7 @@ from urllib.parse import quote
 
 from django.core.exceptions import ImproperlyConfigured
 
-from config.env import env_int, env_str
+from config.env import env_int, env_origin, env_str
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -119,6 +119,17 @@ SESSION_COOKIE_MAX_AGE_LIMIT = 24 * 60 * 60
 SESSION_COOKIE_AGE = env_int("DJANGO_SESSION_COOKIE_AGE", 8 * 60 * 60)
 if not 0 < SESSION_COOKIE_AGE <= SESSION_COOKIE_MAX_AGE_LIMIT:
     raise ImproperlyConfigured("DJANGO_SESSION_COOKIE_AGE must be between 1 and 86400 seconds.")
+# The cookie ends with the browser; the server still enforces SESSION_COOKIE_AGE (SPEC-0003 BR-08).
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+
+# Set-password links (SPEC-0003 BR-07, SEC-23): one hour by default, five minutes to one day.
+PASSWORD_RESET_TIMEOUT = env_int("DJANGO_PASSWORD_RESET_TIMEOUT", 60 * 60)
+if not 5 * 60 <= PASSWORD_RESET_TIMEOUT <= 24 * 60 * 60:
+    raise ImproperlyConfigured(
+        "DJANGO_PASSWORD_RESET_TIMEOUT must be between 300 and 86400 seconds."
+    )
+# Where users open Trilha. Used only to print set-password links, never taken from the Host header.
+TRILHA_BASE_URL = env_origin("TRILHA_BASE_URL", "http://localhost:8080")
 
 # Security headers (SPEC-0001 SEC-05).
 SECURE_CONTENT_TYPE_NOSNIFF = True

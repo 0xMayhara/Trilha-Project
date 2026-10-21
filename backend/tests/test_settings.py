@@ -1,4 +1,5 @@
-"""Production settings must fail closed (SPEC-0001 SEC-01..SEC-04, SEC-12)."""
+"""Production settings must fail closed (SPEC-0001 SEC-01..SEC-04, SEC-12;
+SPEC-0003 SEC-21, SEC-23)."""
 
 import json
 import os
@@ -31,6 +32,7 @@ def _prod_env(**overrides: str | None) -> dict[str, str]:
         "POSTGRES_HOST": "db",
         "REDIS_HOST": "redis",
         "REDIS_PASSWORD": secrets.token_urlsafe(24),
+        "TRILHA_BASE_URL": "https://trilha.example.com",
     }
     for name, value in overrides.items():
         if value is None:
@@ -128,6 +130,9 @@ def test_prod_cookie_flags():
         "SESSION_COOKIE_AGE",
         "CSRF_COOKIE_SECURE",
         "CSRF_COOKIE_SAMESITE",
+        "SESSION_COOKIE_DOMAIN",
+        "CSRF_COOKIE_DOMAIN",
+        "SESSION_EXPIRE_AT_BROWSER_CLOSE",
     )
 
     assert loaded == {
@@ -137,6 +142,10 @@ def test_prod_cookie_flags():
         "SESSION_COOKIE_AGE": 8 * 60 * 60,
         "CSRF_COOKIE_SECURE": True,
         "CSRF_COOKIE_SAMESITE": "Lax",
+        # Host-only cookies: never shared with sibling hosts (SPEC-0003 SEC-21).
+        "SESSION_COOKIE_DOMAIN": None,
+        "CSRF_COOKIE_DOMAIN": None,
+        "SESSION_EXPIRE_AT_BROWSER_CLOSE": True,
     }
 
 
@@ -148,6 +157,59 @@ def test_session_cookie_age_above_limit_is_rejected():
 
     assert result.returncode != 0
     assert "DJANGO_SESSION_COOKIE_AGE" in result.stderr
+
+
+def test_password_reset_timeout_defaults_to_one_hour():
+    loaded = _load_prod_settings(_prod_env(), "PASSWORD_RESET_TIMEOUT", "TRILHA_BASE_URL")
+
+    assert loaded == {
+        "PASSWORD_RESET_TIMEOUT": 60 * 60,
+        "TRILHA_BASE_URL": "https://trilha.example.com",
+    }
+
+
+@pytest.mark.parametrize("timeout", ["299", "86401", "soon"])
+def test_password_reset_timeout_out_of_range_is_rejected(timeout):
+    result = _run(
+        ["-c", _DUMP_SETTINGS, "config.settings.prod", "DEBUG"],
+        _prod_env(DJANGO_PASSWORD_RESET_TIMEOUT=timeout),
+    )
+
+    assert result.returncode != 0
+    assert "DJANGO_PASSWORD_RESET_TIMEOUT" in result.stderr
+
+
+def test_prod_settings_require_https_base_url_cwe_319():
+    result = _run(
+        ["-c", _DUMP_SETTINGS, "config.settings.prod", "DEBUG"],
+        _prod_env(TRILHA_BASE_URL="http://trilha.example.com"),
+    )
+
+    assert result.returncode != 0
+    assert "TRILHA_BASE_URL" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://trilha.example.com/app",
+        "https://trilha.example.com?next=x",
+        "https://user:secret@trilha.example.com",
+        "https://trilha.example.com:99999",
+        "ftp://trilha.example.com",
+        "trilha.example.com",
+    ],
+)
+def test_base_url_must_be_an_origin(base_url):
+    result = _run(
+        ["-c", _DUMP_SETTINGS, "config.settings.prod", "DEBUG"],
+        _prod_env(TRILHA_BASE_URL=base_url),
+    )
+
+    assert result.returncode != 0
+    assert "TRILHA_BASE_URL" in result.stderr
+    # Errors name the variable but never echo its value (config.env).
+    assert "secret" not in result.stderr
 
 
 def test_password_hashers_order():
