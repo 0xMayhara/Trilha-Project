@@ -49,6 +49,8 @@ DATABASES = {
         "HOST": env_str("POSTGRES_HOST"),
         "PORT": env_int("POSTGRES_PORT", 5432),
         "CONN_MAX_AGE": env_int("POSTGRES_CONN_MAX_AGE", 60),
+        # Reconnect instead of failing the first request after a PostgreSQL restart.
+        "CONN_HEALTH_CHECKS": True,
         "OPTIONS": {
             "connect_timeout": 5,
             "sslmode": env_str("POSTGRES_SSLMODE", "prefer"),
