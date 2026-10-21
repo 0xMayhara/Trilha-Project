@@ -61,7 +61,7 @@ def test_audit_ip_ignores_spoofed_forwarded_for_cwe_348(api_client, user):
 def test_invalid_client_address_is_not_recorded_cwe_20(api_client, user, caplog):
     api_client.force_login(user)
 
-    with caplog.at_level(logging.WARNING, logger="apps.audit"):
+    with caplog.at_level(logging.WARNING, logger="apps.core.http"):
         response = api_client.post(AUDITED_URL, HTTP_X_FORWARDED_FOR="not-an-ip\nforged")
 
     assert response.status_code == 200
