@@ -157,6 +157,11 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "anon": env_str("DJANGO_THROTTLE_ANON_RATE", "60/min"),
         "user": env_str("DJANGO_THROTTLE_USER_RATE", "600/min"),
+        # Authentication endpoints (SPEC-0003 BR-09). DRF periods are one unit: s, min, hour, day.
+        "login_ip": env_str("DJANGO_THROTTLE_LOGIN_IP_RATE", "10/min"),
+        "login_username": env_str("DJANGO_THROTTLE_LOGIN_USERNAME_RATE", "10/hour"),
+        "password_set": env_str("DJANGO_THROTTLE_PASSWORD_SET_RATE", "10/hour"),
+        "password_change": env_str("DJANGO_THROTTLE_PASSWORD_CHANGE_RATE", "10/hour"),
     },
     # Exactly one trusted proxy, which overwrites X-Forwarded-For (SEC-18).
     "NUM_PROXIES": 1,

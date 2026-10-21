@@ -241,7 +241,15 @@ def test_default_throttles_are_configured():
         "rest_framework.throttling.AnonRateThrottle",
         "rest_framework.throttling.UserRateThrottle",
     ]
-    assert set(rest_framework["DEFAULT_THROTTLE_RATES"]) == {"anon", "user"}
+    assert set(rest_framework["DEFAULT_THROTTLE_RATES"]) == {
+        "anon",
+        "user",
+        # Authentication endpoints (SPEC-0003 BR-09).
+        "login_ip",
+        "login_username",
+        "password_set",
+        "password_change",
+    }
 
 
 def test_throttle_ident_ignores_spoofed_xff_cwe_348():
