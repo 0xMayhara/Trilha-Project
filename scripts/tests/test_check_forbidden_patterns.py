@@ -56,6 +56,15 @@ class CheckFileTests(unittest.TestCase):
         line = "<div dangerouslySetInnerHTML={{ __html: text }} />"
         self.assert_rejected("frontend/src/app/page.tsx", line, "CWE-79")
 
+    def test_browser_storage_is_forbidden_in_frontend(self):
+        for line in (
+            'localStorage.setItem("session", id)',
+            "const s = window.sessionStorage;",
+            'indexedDB.open("auth")',
+        ):
+            with self.subTest(line=line):
+                self.assert_rejected("frontend/src/lib/auth.ts", line, "CWE-922")
+
 
 class CheckTrackedTests(unittest.TestCase):
     def test_no_tracked_files_fails_closed_cwe_636(self):

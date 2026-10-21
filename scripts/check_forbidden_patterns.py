@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Reject known-dangerous patterns in tracked files (CLAUDE.md §22, SPEC-0001 SEC-08/21/22).
+"""Reject known-dangerous patterns in tracked files (CLAUDE.md §22, SPEC-0001 SEC-08/21/22,
+SPEC-0003 SEC-22).
 
 Fails closed: an empty list of tracked files is a violation.
 """
@@ -30,6 +31,13 @@ RULES = [
         (".ts", ".tsx"),
         r"dangerouslySetInnerHTML",
         "dangerouslySetInnerHTML requires a SPEC exception (CWE-79)",
+    ),
+    (
+        "frontend/src/",
+        (".ts", ".tsx"),
+        r"\b(localStorage|sessionStorage|indexedDB)\b",
+        "browser storage must not hold credentials or session data; the session is an HttpOnly "
+        "cookie (CWE-922)",
     ),
 ]
 
