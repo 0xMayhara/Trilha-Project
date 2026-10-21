@@ -54,7 +54,8 @@ def test_event_stores_what_the_service_passes(command_context, user):
         resource=Resource.of(user),
         outcome=Outcome.SUCCESS,
         changes={"is_active": {"before": True, "after": False}},
-        metadata={"reason": "left the company"},
+        # Control characters other than NUL are valid JSON and stay storable.
+        metadata={"reason": "left the company\nper HR ticket"},
     )
 
     stored = AuditEvent.objects.get(pk=event.pk)
@@ -68,7 +69,7 @@ def test_event_stores_what_the_service_passes(command_context, user):
     assert stored.source == "command"
     assert stored.client_ip is None
     assert stored.changes == {"is_active": {"before": True, "after": False}}
-    assert stored.metadata == {"reason": "left the company"}
+    assert stored.metadata == {"reason": "left the company\nper HR ticket"}
     assert isinstance(stored.event_id, uuid.UUID)
 
 
@@ -205,6 +206,12 @@ def test_oversized_payload_is_rejected_cwe_779(command_context):
         {"actor": Actor(type=ActorType.ANONYMOUS, label="admin")},
         {"metadata": {"value": object()}},
         {"metadata": ["not", "a", "mapping"]},
+        # Valid for Python's json module, rejected by PostgreSQL jsonb (CWE-20).
+        {"changes": {"cvss": {"before": None, "after": float("nan")}}},
+        {"metadata": {"score": float("inf")}},
+        {"metadata": {"hostname": "web\x0001"}},
+        {"metadata": {"host\x00name": "web01"}},
+        {"metadata": {"hostname": json.loads('"web\\ud800"')}},
     ],
 )
 def test_invalid_codes_are_rejected_by_service(command_context, kwargs):
