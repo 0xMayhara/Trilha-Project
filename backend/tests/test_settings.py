@@ -160,11 +160,14 @@ def test_session_cookie_age_above_limit_is_rejected():
 
 
 def test_password_reset_timeout_defaults_to_one_hour():
-    loaded = _load_prod_settings(_prod_env(), "PASSWORD_RESET_TIMEOUT", "TRILHA_BASE_URL")
+    loaded = _load_prod_settings(
+        _prod_env(), "PASSWORD_RESET_TIMEOUT", "TRILHA_BASE_URL", "CSRF_TRUSTED_ORIGINS"
+    )
 
     assert loaded == {
         "PASSWORD_RESET_TIMEOUT": 60 * 60,
         "TRILHA_BASE_URL": "https://trilha.example.com",
+        "CSRF_TRUSTED_ORIGINS": ["https://trilha.example.com"],
     }
 
 

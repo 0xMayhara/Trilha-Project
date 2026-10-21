@@ -129,8 +129,12 @@ if not 5 * 60 <= PASSWORD_RESET_TIMEOUT <= 24 * 60 * 60:
     raise ImproperlyConfigured(
         "DJANGO_PASSWORD_RESET_TIMEOUT must be between 300 and 86400 seconds."
     )
-# Where users open Trilha. Used only to print set-password links, never taken from the Host header.
+# Where users open Trilha. Used to print set-password links, never taken from the Host header.
 TRILHA_BASE_URL = env_origin("TRILHA_BASE_URL", "http://localhost:8080")
+# The proxy forwards Host without the published port, so Django's own guess of the origin
+# (http://localhost) misses the port the browser sends (http://localhost:8080). Trust exactly the
+# configured address; any other Origin is still rejected (SPEC-0003 SEC-03).
+CSRF_TRUSTED_ORIGINS = [TRILHA_BASE_URL]
 
 # Security headers (SPEC-0001 SEC-05).
 SECURE_CONTENT_TYPE_NOSNIFF = True

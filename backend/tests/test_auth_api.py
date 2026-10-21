@@ -218,6 +218,38 @@ def test_login_without_csrf_token_is_rejected_cwe_352(alice):
     assert not AuditEvent.objects.filter(action="accounts.login_succeeded").exists()
 
 
+def test_login_accepts_the_configured_origin_through_the_proxy(alice):
+    # nginx forwards Host without the published port; the browser's Origin keeps it.
+    browser = Browser()
+    browser.client.get(AUTH + "csrf/")
+
+    response = browser.client.post(
+        AUTH + "login/",
+        {"username": "alice", "password": PASSWORD},
+        format="json",
+        HTTP_ORIGIN=settings.TRILHA_BASE_URL,
+        HTTP_X_CSRFTOKEN=browser.client.cookies["csrftoken"].value,
+    )
+
+    assert response.status_code == 200
+
+
+def test_login_from_a_foreign_origin_is_rejected_cwe_352(alice):
+    browser = Browser()
+    browser.client.get(AUTH + "csrf/")
+
+    response = browser.client.post(
+        AUTH + "login/",
+        {"username": "alice", "password": PASSWORD},
+        format="json",
+        HTTP_ORIGIN="http://evil.example",
+        HTTP_X_CSRFTOKEN=browser.client.cookies["csrftoken"].value,
+    )
+
+    assert_csrf_rejected(response)
+    assert "sessionid" not in browser.client.cookies
+
+
 def test_login_rotates_session_key_cwe_384(alice):
     planted = SessionStore()
     planted.create()  # A session key the attacker knows and plants in the victim's browser.
