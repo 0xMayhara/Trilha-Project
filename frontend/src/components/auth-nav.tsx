@@ -3,6 +3,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+
+import { clearOwnAccess } from "@/lib/access";
 
 import {
   authErrorMessage,
@@ -16,6 +19,9 @@ export function AuthNav() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data: user } = useQuery({ queryKey: SESSION_QUERY_KEY, queryFn: fetchSessionUser });
+  useEffect(() => {
+    if (user === null) void clearOwnAccess(queryClient);
+  }, [user, queryClient]);
   const logout = useMutation({
     mutationFn: logOut,
     onSettled: async (_data, error) => {
@@ -24,6 +30,7 @@ export function AuthNav() {
         await queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY });
         return;
       }
+      await clearOwnAccess(queryClient);
       queryClient.setQueryData(SESSION_QUERY_KEY, null);
       router.push("/login");
     },
@@ -42,6 +49,7 @@ export function AuthNav() {
   return (
     <div className="flex items-center gap-4 text-sm">
       <span className="text-neutral-600">Signed in as {user.username}</span>
+      <Link href="/account/access" className="underline">Your access</Link>
       <Link href="/account/password" className="underline">
         Change password
       </Link>

@@ -1,0 +1,51 @@
+import type { QueryClient } from "@tanstack/react-query";
+import { z } from "zod";
+
+import { ApiError, apiFetch } from "@/lib/api-client";
+import { SESSION_QUERY_KEY } from "@/lib/auth";
+
+const teamSchema = z.object({ id: z.uuid(), code: z.string(), name: z.string() });
+export const accessPageSchema = z.object({
+  count: z.number().int().nonnegative(),
+  next: z.string().nullable(),
+  previous: z.string().nullable(),
+  results: z.array(z.object({
+    membership_id: z.uuid(),
+    team: teamSchema,
+    roles: z.array(teamSchema),
+    permissions: z.array(z.literal("teams.view_team")),
+  })),
+});
+export type AccessPage = z.infer<typeof accessPageSchema>;
+export const ACCESS_QUERY_KEY = ["rbac", "me"] as const;
+
+export function accessQueryKey(userId: string, page: number) {
+  return [...ACCESS_QUERY_KEY, userId, page] as const;
+}
+
+export function fetchOwnAccess(page: number, signal?: AbortSignal) {
+  if (!Number.isSafeInteger(page) || page < 1) throw new Error("Invalid page.");
+  // Navigation uses local page numbers, never server-returned URLs.
+  return apiFetch(`/api/v1/rbac/me/?page=${page}`, accessPageSchema, { signal });
+}
+
+export async function clearOwnAccess(client: QueryClient) {
+  await client.cancelQueries({ queryKey: ACCESS_QUERY_KEY });
+  client.removeQueries({ queryKey: ACCESS_QUERY_KEY });
+}
+
+export async function handleAccessError(client: QueryClient, error: unknown) {
+  if (error instanceof ApiError && error.status === 401) {
+    await clearOwnAccess(client);
+    client.setQueryData(SESSION_QUERY_KEY, null);
+  }
+}
+
+export function accessErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 403) return "Access denied. Your authentication session may still be valid.";
+    if (error.status === 401) return "Your session has ended. Log in again.";
+    if (error.status === 503) return "Service temporarily unavailable. Try again.";
+  }
+  return "Unable to load access. Try again.";
+}
