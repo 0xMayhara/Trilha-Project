@@ -14,12 +14,13 @@ DEBUG = False
 ALLOWED_HOSTS: list[str] = []
 
 INSTALLED_APPS = [
+    # Before django.contrib.auth: its createsuperuser/changepassword overrides must win (SPEC-0003).
+    "apps.accounts",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "rest_framework",
     "apps.core",
-    "apps.accounts",
     "apps.audit",
 ]
 
