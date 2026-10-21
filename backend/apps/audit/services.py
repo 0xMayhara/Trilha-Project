@@ -141,9 +141,20 @@ def _clean_payload(name: str, payload: Mapping[str, Any] | None) -> dict[str, An
 
 
 def _check_size(changes: dict[str, Any], metadata: dict[str, Any]) -> None:
+    payload = {"changes": changes, "metadata": metadata}
     try:
-        encoded = json.dumps({"changes": changes, "metadata": metadata}, cls=DjangoJSONEncoder)
+        # allow_nan=False: PostgreSQL jsonb rejects NaN and Infinity.
+        encoded = json.dumps(payload, cls=DjangoJSONEncoder, allow_nan=False)
     except (TypeError, ValueError) as exc:
         raise AuditValidationError("changes and metadata must be JSON-serializable.") from exc
+    # PostgreSQL jsonb also rejects NUL. shortcut: the literal text "\u0000" is rejected too, which
+    # fails closed; match escapes precisely if a feature ever needs to store that text.
+    if "\\u0000" in encoded:
+        raise AuditValidationError("changes and metadata must not contain NUL characters.")
     if len(encoded.encode()) > MAX_PAYLOAD_BYTES:
         raise AuditPayloadTooLarge(f"changes + metadata exceed {MAX_PAYLOAD_BYTES} bytes.")
+    # jsonb also rejects lone surrogates (json.loads turns "\ud800" into one); they cannot be UTF-8.
+    try:
+        json.dumps(payload, cls=DjangoJSONEncoder, ensure_ascii=False).encode()
+    except UnicodeEncodeError as exc:
+        raise AuditValidationError("changes and metadata must be valid Unicode.") from exc
