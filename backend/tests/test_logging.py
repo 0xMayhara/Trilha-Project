@@ -99,6 +99,18 @@ def test_request_log_excludes_query_values_and_headers(api_client, access_log):
     assert payload["level"] == "INFO"
 
 
+def test_access_log_omits_invalid_client_address_cwe_20(api_client, access_log):
+    # Only possible when the proxy is bypassed: it always sends a valid address (SEC-18).
+    api_client.get(HEALTH_URL, HTTP_X_FORWARDED_FOR="not-an-ip\nforged")
+
+    (record,) = [r for r in access_log.records if r.name == "apps.access"]
+    output = JsonFormatter().format(record)
+    assert json.loads(output)["client_ip"] is None
+    assert "not-an-ip" not in output
+    events = [getattr(r, "event", None) for r in access_log.records]
+    assert events.count("invalid_client_address") == 1
+
+
 @pytest.mark.urls("tests.urls")
 def test_denied_request_is_logged_as_security_event(api_client, db, access_log):
     api_client.get("/api/test/authenticated/")
