@@ -1,7 +1,6 @@
 """Thin HTTP adapters over apps.assets services and selectors (SPEC-0005 API Contract)."""
 
 import logging
-import uuid
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import exceptions
@@ -45,12 +44,6 @@ NAME_TAKEN = "An active asset with this name already exists in the team."
 INVALID_STATE = "The asset's state does not allow this operation."
 
 
-def _uuid_text(value):
-    """Canonical UUID text, or ValueError: a logged identifier cannot carry log syntax (CWE-117),
-    the same rule parse_request_id applies to request IDs."""
-    return str(uuid.UUID(str(value)))
-
-
 class AssetAPIView(APIView):
     permission_classes = (ActiveSession,)
 
@@ -85,13 +78,9 @@ class AssetAPIView(APIView):
     def _denied(self, operation, asset_id=None, reason=None):
         # IDs only. The asset ID comes from the database row of an in-scope 403, never from the
         # URL, and is absent for hidden or missing assets. Submitted team IDs are never logged.
-        extra = {
-            "operation": operation,
-            "actor_id": _uuid_text(self.request.user.pk),
-            "outcome": "denied",
-        }
+        extra = {"operation": operation, "actor_id": str(self.request.user.pk), "outcome": "denied"}
         if asset_id is not None:
-            extra["asset_id"] = _uuid_text(asset_id)
+            extra["asset_id"] = str(asset_id)
         if reason is not None:
             extra["reason"] = reason
         logger.warning("authorization_denied", extra=extra)
