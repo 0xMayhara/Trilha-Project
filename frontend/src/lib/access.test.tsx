@@ -49,6 +49,17 @@ describe("own-access contracts", () => {
     expect(accessErrorMessage(new ApiError(403, "permission_denied", "internal"))).toContain("Access denied");
     expect(accessErrorMessage(new ApiError(503, "service_unavailable", "internal"))).toContain("temporarily unavailable");
   });
+  it("test_access_schema_accepts_asset_catalog_codes", () => {
+    const codes = ["teams.view_team", "assets.view_asset", "assets.add_asset", "assets.change_asset", "assets.retire_asset", "assets.transfer_asset"];
+    const parsed = accessPageSchema.parse({ ...page, results: [{ ...entry, permissions: codes }] });
+    expect(parsed.results[0]?.permissions).toEqual(codes);
+    for (const unknown of ["*", "assets.delete_asset", "assets.*"]) {
+      expect(() => accessPageSchema.parse({ ...page, results: [{ ...entry, permissions: [unknown] }] })).toThrow();
+    }
+    const markup = renderToStaticMarkup(<AccessEntries entries={parsed.results} />);
+    expect(markup).toContain("Register assets, Edit assets");
+    expect(markup).toContain("Transfer assets");
+  });
   it("test_access_labels_render_as_text", () => {
     const parsed = accessPageSchema.parse({ ...page, results: [{ ...entry,
       team: { ...entry.team, name: '<img src=x onerror="alert(1)">' },
