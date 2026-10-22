@@ -54,5 +54,5 @@ def viewable_asset(principal, asset_id):
     except Asset.DoesNotExist:
         raise AssetNotFound from None
     if not can_access(principal, VIEW, team_id=asset.team_id):
-        raise AssetForbidden
+        raise AssetForbidden(asset.pk)
     return asset

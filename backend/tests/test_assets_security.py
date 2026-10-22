@@ -25,7 +25,14 @@ from rest_framework.throttling import SimpleRateThrottle
 from apps.accounts import services as accounts
 from apps.accounts.models import User
 from apps.assets import services, views
-from apps.assets.exceptions import AssetConflict, AssetForbidden, AssetNotFound, TeamUnavailable
+from apps.assets.exceptions import (
+    AssetForbidden,
+    AssetNotFound,
+    InvalidState,
+    NameTaken,
+    StaleAsset,
+    TeamUnavailable,
+)
 from apps.assets.models import Asset
 from apps.audit.context import audit_source
 from apps.audit.exceptions import AuditValidationError
@@ -467,8 +474,7 @@ def test_role_assignment_drift_aborts_asset_mutation(caplog):
         lambda: services.update_asset(w.principal, w.asset.pk, version=1, changes={"name": "X"}),
     )
     assert blocked
-    assert isinstance(result.get("error"), AssetConflict), result
-    assert str(result["error"]) == AssetConflict.STALE
+    assert isinstance(result.get("error"), StaleAsset), result
     assert any(getattr(r, "reason", None) == "role_drift" for r in caplog.records)
     assert reload(w.asset).name == "Web 01"
 
@@ -591,7 +597,7 @@ def test_stale_asset_version_is_rejected_without_change(world):
     for method, path, body in mutation_requests(world.asset, 1, team_id=world.beta.pk)[1:]:
         response = send(world.client, method, path, body)
         assert response.status_code == 409, path
-        assert response.json()["error"]["message"] == AssetConflict.STALE
+        assert response.json()["error"]["message"] == views.STALE
     asset = reload(world.asset)
     assert (asset.name, asset.version, asset.team_id) == ("Second", 2, world.alpha.pk)
     assert events("assets.asset_updated").count() == updates
@@ -619,7 +625,7 @@ def test_active_asset_name_is_unique_per_team_cwe_694():
     body = {"team_id": str(w.alpha.pk), "name": "WEB 01", "kind": "server"}
     response = w.client.post(API, body, format="json")
     assert response.status_code == 409
-    assert response.json()["error"]["message"] == AssetConflict.NAME_TAKEN
+    assert response.json()["error"]["message"] == views.NAME_TAKEN
     assert w.client.post(API, {**body, "team_id": str(w.beta.pk)}, format="json").status_code == 201
     other = services.create_asset(w.principal, team_id=w.alpha.pk, name="Other", kind="server")
     renamed = w.client.patch(detail(other), {"version": 1, "name": "web 01"}, format="json")
@@ -639,7 +645,7 @@ def test_active_asset_name_is_unique_per_team_cwe_694():
     outcomes = sorted(
         type(result.get("error", result.get("value"))).__name__ for _, result in (first, second)
     )
-    assert outcomes == ["Asset", "AssetConflict"]
+    assert outcomes == ["Asset", "NameTaken"]
     assert Asset.objects.filter(team=w.alpha, name="Race").count() == 1
 
 
@@ -650,7 +656,7 @@ def test_restore_conflicts_with_active_asset_of_same_name(world):
     )
     response = world.client.post(detail(world.asset, "restore/"), {"version": 2}, format="json")
     assert response.status_code == 409
-    assert response.json()["error"]["message"] == AssetConflict.NAME_TAKEN
+    assert response.json()["error"]["message"] == views.NAME_TAKEN
     old = reload(world.asset)
     assert (old.status, old.version) == ("retired", 2)
     assert reload(newer).status == "active" and not events("assets.asset_restored").exists()
@@ -662,7 +668,7 @@ def test_transfer_conflicts_with_destination_active_name(world):
     body = {"version": 1, "team_id": str(world.beta.pk)}
     response = world.client.post(detail(world.asset, "transfer/"), body, format="json")
     assert response.status_code == 409
-    assert response.json()["error"]["message"] == AssetConflict.NAME_TAKEN
+    assert response.json()["error"]["message"] == views.NAME_TAKEN
     assert reload(world.asset).team_id == world.alpha.pk
 
 
@@ -1324,6 +1330,38 @@ def test_unrelated_integrity_errors_return_generic_500_without_database_details(
     integrity = [r for r in caplog.records if r.getMessage() == "asset_integrity_error"]
     assert [(r.operation, r.constraint) for r in integrity] == [("create", "asset_hostname")]
     assert Asset.objects.count() == 1
+
+
+def test_asset_error_responses_use_fixed_messages_cwe_209(world, caplog):
+    """Responses come from fixed adapter text per error type, never from exception content; denial
+    logs carry the asset ID the domain read from the database, never the request's value."""
+    canary = "internal-detail-canary-5521"
+    cases = [
+        (StaleAsset(canary), 409, views.STALE),
+        (NameTaken(canary), 409, views.NAME_TAKEN),
+        (InvalidState(canary), 409, views.INVALID_STATE),
+        (TeamUnavailable(canary), 400, None),
+        (AssetForbidden(world.asset.pk), 403, None),
+    ]
+    for error, status, message in cases:
+        with mock.patch.object(services, "update_asset", side_effect=error):
+            response = world.client.patch(
+                detail(world.asset), {"version": 1, "name": "X"}, format="json"
+            )
+        assert response.status_code == status, type(error).__name__
+        assert canary not in response.content.decode()
+        if message:
+            assert response.json()["error"]["message"] == message
+    body = world.client.post(
+        API, {"team_id": str(uuid.uuid4()), "name": "X", "kind": "server"}, format="json"
+    ).json()
+    assert body["error"]["details"] == {"team_id": [views.TEAM_UNAVAILABLE]}
+    denials = [r for r in caplog.records if r.getMessage() == "authorization_denied"]
+    assert [getattr(r, "asset_id", None) for r in denials if r.operation == "update"] == [
+        None,
+        str(world.asset.pk),
+    ]
+    assert canary not in formatted_logs(caplog)
 
 
 # Functional contract

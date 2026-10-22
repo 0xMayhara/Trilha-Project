@@ -10,7 +10,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.assets import services
-from apps.assets.exceptions import AssetConflict, AssetForbidden, AssetNotFound, TeamUnavailable
+from apps.assets.exceptions import (
+    AssetForbidden,
+    AssetNotFound,
+    InvalidState,
+    NameTaken,
+    StaleAsset,
+    TeamUnavailable,
+)
 from apps.assets.selectors import search_assets, viewable_asset
 from apps.assets.serializers import (
     CREATE_FIELDS,
@@ -30,6 +37,12 @@ from apps.rbac.views import validate_query
 
 logger = logging.getLogger("apps.assets")
 
+# User-facing text is fixed here, per error type: exception content never reaches a response.
+TEAM_UNAVAILABLE = "Select a team where you can perform this action."
+STALE = "The asset changed. Reload and try again."
+NAME_TAKEN = "An active asset with this name already exists in the team."
+INVALID_STATE = "The asset's state does not allow this operation."
+
 
 class AssetAPIView(APIView):
     permission_classes = (ActiveSession,)
@@ -40,27 +53,31 @@ class AssetAPIView(APIView):
             throttles.append(AssetWriteThrottle())
         return throttles
 
-    def run(self, operation, function, *args, asset_id=None, **kwargs):
+    def run(self, operation, function, *args, **kwargs):
         """Calls one domain use case and translates its errors; no rule is decided here."""
         try:
             return function(session_principal(self.request.user), *args, **kwargs)
         except AssetNotFound:
             self._denied(operation)
             raise exceptions.NotFound from None
-        except AssetForbidden:
-            self._denied(operation, asset_id)
+        except AssetForbidden as exc:
+            self._denied(operation, exc.asset_id)
             raise exceptions.PermissionDenied from None
-        except TeamUnavailable as exc:
+        except TeamUnavailable:
             self._denied(operation, reason="team_unavailable")  # probing other teams' IDs
-            raise exceptions.ValidationError({"team_id": [str(exc)]}) from None
-        except AssetConflict as exc:
-            raise Conflict(str(exc)) from None
+            raise exceptions.ValidationError({"team_id": [TEAM_UNAVAILABLE]}) from None
+        except StaleAsset:
+            raise Conflict(STALE) from None
+        except NameTaken:
+            raise Conflict(NAME_TAKEN) from None
+        except InvalidState:
+            raise Conflict(INVALID_STATE) from None
         except DjangoValidationError as exc:
             raise exceptions.ValidationError(exc.message_dict) from None
 
     def _denied(self, operation, asset_id=None, reason=None):
-        # IDs only; the asset ID only for in-scope 403s, never for hidden or missing assets.
-        # The submitted team ID is never logged (SPEC-0005 Logging Requirements).
+        # IDs only. The asset ID comes from the database row of an in-scope 403, never from the
+        # URL, and is absent for hidden or missing assets. Submitted team IDs are never logged.
         extra = {"operation": operation, "actor_id": str(self.request.user.pk), "outcome": "denied"}
         if asset_id is not None:
             extra["asset_id"] = str(asset_id)
@@ -86,15 +103,13 @@ class AssetListView(AssetAPIView, ListAPIView):
 class AssetDetailView(AssetAPIView):
     def get(self, request, pk):
         validate_query(request, paginated=False)
-        asset = self.run("read", viewable_asset, pk, asset_id=pk)
+        asset = self.run("read", viewable_asset, pk)
         return Response(AssetSerializer(asset).data)
 
     def patch(self, request, pk):
         data = parse_body(request.data, UPDATE_FIELDS, required=("version",))
         version = data.pop("version")
-        asset = self.run(
-            "update", services.update_asset, pk, asset_id=pk, version=version, changes=data
-        )
+        asset = self.run("update", services.update_asset, pk, version=version, changes=data)
         return Response(AssetSerializer(asset).data)
 
 
@@ -104,9 +119,7 @@ class AssetTransitionView(AssetAPIView):
 
     def post(self, request, pk):
         data = parse_body(request.data, TRANSITION_FIELDS, required=("version",))
-        asset = self.run(
-            self.operation, type(self).service, pk, asset_id=pk, version=data["version"]
-        )
+        asset = self.run(self.operation, type(self).service, pk, version=data["version"])
         return Response(AssetSerializer(asset).data)
 
 
@@ -127,7 +140,6 @@ class AssetTransferView(AssetAPIView):
             "transfer",
             services.transfer_asset,
             pk,
-            asset_id=pk,
             version=data["version"],
             team_id=data["team_id"],
         )

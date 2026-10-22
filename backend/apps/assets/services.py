@@ -15,10 +15,12 @@ from django.db import IntegrityError, OperationalError, connection, transaction
 
 from apps.accounts.selectors import users
 from apps.assets.exceptions import (
-    AssetConflict,
     AssetForbidden,
     AssetIntegrityFailure,
     AssetNotFound,
+    InvalidState,
+    NameTaken,
+    StaleAsset,
     TeamUnavailable,
 )
 from apps.assets.models import ACTIVE_NAME_CONSTRAINT, Asset, Criticality, Environment, Kind, Status
@@ -145,7 +147,7 @@ def _mutation(operation, principal):
         if getattr(cause, "sqlstate", None) == "23505" and _constraint(cause) == (
             ACTIVE_NAME_CONSTRAINT
         ):
-            raise AssetConflict(AssetConflict.NAME_TAKEN) from None
+            raise NameTaken from None
         logger.error(
             "asset_integrity_error",
             extra={"operation": operation, "constraint": _constraint(cause)},
@@ -164,10 +166,10 @@ def _eligible(principal, team_id):
     return scoped_teams(principal).filter(pk=team_id).exists()
 
 
-def _require(principal, team_id, codes):
+def _require(principal, team_id, codes, asset=None):
     for code in codes:
         if not can_access(principal, code, team_id=team_id, action=catalog_action(code)):
-            raise AssetForbidden
+            raise AssetForbidden(asset.pk if asset is not None else None)
 
 
 def _lock(principal, operation, team_ids):
@@ -191,7 +193,7 @@ def _lock(principal, operation, team_ids):
     # A role assigned before the Team locks is not locked; never acquire a Role after a Team.
     if not role_ids() <= candidates:
         _lock_unavailable(operation, principal, "role_drift")
-        raise AssetConflict(AssetConflict.STALE)
+        raise StaleAsset
 
 
 def _source_team(principal, asset_id):
@@ -207,14 +209,14 @@ def _relock(principal, asset_id, source):
     except Asset.DoesNotExist:
         raise AssetNotFound from None
     if asset.team_id != source:
-        raise AssetConflict(AssetConflict.STALE)
+        raise StaleAsset
     asset.ip_addresses = display_ips(asset.ip_addresses)
     return asset
 
 
 def _check_version(asset, version):
     if asset.version != version:
-        raise AssetConflict(AssetConflict.STALE)
+        raise StaleAsset
 
 
 def create_asset(principal, *, team_id, **fields):
@@ -249,10 +251,10 @@ def update_asset(principal, asset_id, *, version, changes):
         source = _source_team(principal, asset_id)
         _lock(principal, "update", {source})
         asset = _relock(principal, asset_id, source)
-        _require(principal, source, (VIEW, CHANGE))
+        _require(principal, source, (VIEW, CHANGE), asset)
         _check_version(asset, version)  # before no-op detection (SEC-11)
         if asset.status != Status.ACTIVE:
-            raise AssetConflict(AssetConflict.STATE)
+            raise InvalidState
         changed = tuple(field for field, value in values.items() if getattr(asset, field) != value)
         if not changed:
             return asset
@@ -273,10 +275,10 @@ def _transition(principal, asset_id, version, *, operation, source_status, targe
         source = _source_team(principal, asset_id)
         _lock(principal, operation, {source})
         asset = _relock(principal, asset_id, source)
-        _require(principal, source, (VIEW, RETIRE))
+        _require(principal, source, (VIEW, RETIRE), asset)
         _check_version(asset, version)
         if asset.status != source_status:
-            raise AssetConflict(AssetConflict.STATE)
+            raise InvalidState
         before = snapshot(asset, ("status",))
         asset.status = target_status
         asset.version += 1
@@ -323,13 +325,13 @@ def transfer_asset(principal, asset_id, *, version, team_id):
         asset = _relock(principal, asset_id, source)
         if not _eligible(principal, destination):
             raise TeamUnavailable
-        _require(principal, source, (VIEW, TRANSFER))
-        _require(principal, destination, (VIEW, TRANSFER))
+        _require(principal, source, (VIEW, TRANSFER), asset)
+        _require(principal, destination, (VIEW, TRANSFER), asset)
         _check_version(asset, version)
         if destination == source:
             raise ValidationError({"team_id": ["Choose a different team."]})
         if asset.status != Status.ACTIVE:
-            raise AssetConflict(AssetConflict.STATE)
+            raise InvalidState
         before = snapshot(asset, ("team_id",))
         asset.team_id = destination
         asset.version += 1
