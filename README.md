@@ -85,6 +85,33 @@ docker compose exec backend python manage.py teams_activate soc
 - Inspect with `teams_list`, `teams_members <team>`, `rbac_list_roles` and `rbac_list_permissions`.
 - Users see their own access at `/account/access`.
 
+## Assets
+
+Each asset belongs to exactly one team. A team's assets are managed at `/assets` by members whose
+role in that team holds the asset permissions. Every action also needs `assets.view_asset`:
+
+| Permission | Allows |
+|---|---|
+| `assets.view_asset` | List, search and read the team's assets, including retired ones |
+| `assets.add_asset` | Register assets in the team |
+| `assets.change_asset` | Edit an active asset's attributes |
+| `assets.retire_asset` | Retire an asset, or restore a retired one |
+| `assets.transfer_asset` | Move an asset to another team; needed in **both** teams |
+
+```sh
+# A role that can manage the soc team's inventory.
+docker compose exec backend python manage.py rbac_create_role asset-manager --name "Asset manager"
+for code in view_asset add_asset change_asset retire_asset transfer_asset; do
+  docker compose exec backend python manage.py rbac_grant_permission asset-manager "assets.$code"
+done
+docker compose exec backend python manage.py rbac_assign_role soc alice asset-manager
+```
+
+- Assets are never deleted. Retire an asset instead; it stays readable through the "Retired" filter.
+- An asset name is unique among the team's active assets (case-insensitive). Hostnames and IP
+  addresses are attributes, not identities, and may repeat.
+- Asset changes are limited per user (`DJANGO_THROTTLE_ASSET_WRITE_RATE`, default `60/min`).
+
 ## Development
 
 Backend (requires [uv](https://docs.astral.sh/uv/) and a PostgreSQL instance for tests):
