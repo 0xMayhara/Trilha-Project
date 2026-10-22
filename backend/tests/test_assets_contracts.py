@@ -56,10 +56,10 @@ def test_assets_migration_is_additive_and_empty_database_reversible():
 
 def test_database_rejects_non_nfc_asset_text(team):
     for field, constraint in (("name", "asset_name_nfc"), ("operating_system", "asset_os_nfc")):
-        values = {"name": "Server", field: "Café"}
+        values = {"name": "Server", field: "Cafe\u0301"}
         with pytest.raises(IntegrityError, match=constraint), transaction.atomic():
             Asset.objects.create(team=team, kind="server", **values)
-    Asset.objects.create(team=team, kind="server", name="Café", operating_system="Café")
+    Asset.objects.create(team=team, kind="server", name="Caf\u00e9", operating_system="Caf\u00e9")
 
 
 @pytest.mark.parametrize(
@@ -123,7 +123,7 @@ def test_hostname_requires_strict_dns_form():
     assert canonical_hostname("") == ""
     for bad in (
         "web_01",
-        "bücher.example",
+        "b\u00fccher.example",
         "example.com.",
         "-a.example",
         "a..b",
