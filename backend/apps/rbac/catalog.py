@@ -8,6 +8,11 @@ SUPPORTED_PERMISSIONS = {"teams.view_team": ("view_team", "teams", "team")}
 PERMISSION_CODES = {key: code for code, key in SUPPORTED_PERMISSIONS.items()}
 
 
+def catalog_action(code):
+    """The one action a supported code authorizes: its native codename before the first "_"."""
+    return SUPPORTED_PERMISSIONS[code][0].split("_", 1)[0]
+
+
 def catalog_permissions(*codes):
     """Rows for the given supported codes (all when omitted); callers reject unknown codes first."""
     # Full natural keys avoid accidentally accepting the same codename on another model.
