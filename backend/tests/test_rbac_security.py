@@ -120,7 +120,7 @@ def test_team_disclosure_policy_and_counts(rbac_setup):
 def test_native_auth_privileges_do_not_bypass_rbac(rbac_setup):
     user, team, member, role, client = rbac_setup
     rbac.revoke_role(OPERATOR, member.pk, role.pk)
-    permission = catalog_permissions().get()
+    permission = catalog_permissions(PERMISSION).get()
     user.is_staff = user.is_superuser = True
     user.save()
     user.user_permissions.add(permission)

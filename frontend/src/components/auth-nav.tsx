@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { clearOwnAccess } from "@/lib/access";
+import { clearAssetQueries } from "@/lib/assets";
 
 import {
   authErrorMessage,
@@ -20,7 +21,10 @@ export function AuthNav() {
   const queryClient = useQueryClient();
   const { data: user } = useQuery({ queryKey: SESSION_QUERY_KEY, queryFn: fetchSessionUser });
   useEffect(() => {
-    if (user === null) void clearOwnAccess(queryClient);
+    if (user === null) {
+      void clearOwnAccess(queryClient);
+      void clearAssetQueries(queryClient);
+    }
   }, [user, queryClient]);
   const logout = useMutation({
     mutationFn: logOut,
@@ -31,6 +35,7 @@ export function AuthNav() {
         return;
       }
       await clearOwnAccess(queryClient);
+      await clearAssetQueries(queryClient);
       queryClient.setQueryData(SESSION_QUERY_KEY, null);
       router.push("/login");
     },
@@ -49,6 +54,7 @@ export function AuthNav() {
   return (
     <div className="flex items-center gap-4 text-sm">
       <span className="text-neutral-600">Signed in as {user.username}</span>
+      <Link href="/assets" className="underline">Assets</Link>
       <Link href="/account/access" className="underline">Your access</Link>
       <Link href="/account/password" className="underline">
         Change password

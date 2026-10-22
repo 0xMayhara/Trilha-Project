@@ -4,6 +4,25 @@ import { z } from "zod";
 import { ApiError, apiFetch } from "@/lib/api-client";
 import { SESSION_QUERY_KEY } from "@/lib/auth";
 
+/** The server's supported permission catalog. Unknown codes are rejected, never displayed. */
+export const PERMISSION_CODES = [
+  "teams.view_team",
+  "assets.view_asset",
+  "assets.add_asset",
+  "assets.change_asset",
+  "assets.retire_asset",
+  "assets.transfer_asset",
+] as const;
+export type PermissionCode = (typeof PERMISSION_CODES)[number];
+export const PERMISSION_LABELS: Record<PermissionCode, string> = {
+  "teams.view_team": "View team summary",
+  "assets.view_asset": "View assets",
+  "assets.add_asset": "Register assets",
+  "assets.change_asset": "Edit assets",
+  "assets.retire_asset": "Retire and restore assets",
+  "assets.transfer_asset": "Transfer assets",
+};
+
 const teamSchema = z.object({ id: z.uuid(), code: z.string(), name: z.string() });
 export const accessPageSchema = z.object({
   count: z.number().int().nonnegative(),
@@ -13,7 +32,7 @@ export const accessPageSchema = z.object({
     membership_id: z.uuid(),
     team: teamSchema,
     roles: z.array(teamSchema),
-    permissions: z.array(z.literal("teams.view_team")),
+    permissions: z.array(z.enum(PERMISSION_CODES)),
   })),
 });
 export type AccessPage = z.infer<typeof accessPageSchema>;

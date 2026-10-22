@@ -2,7 +2,7 @@
 
 from django.db.models import Exists, OuterRef, Prefetch
 
-from apps.rbac.catalog import SUPPORTED_PERMISSIONS, catalog_permissions
+from apps.rbac.catalog import SUPPORTED_PERMISSIONS, catalog_action, catalog_permissions
 from apps.rbac.models import Role, RoleAssignment
 from apps.rbac.principals import UserPrincipal
 from apps.teams.selectors import memberships, teams
@@ -21,7 +21,11 @@ def scoped_teams(principal):
 
 
 def authorized_teams(principal, permission="teams.view_team", *, scope_type="team", action="view"):
-    if permission not in SUPPORTED_PERMISSIONS or scope_type != "team" or action != "view":
+    if (
+        permission not in SUPPORTED_PERMISSIONS
+        or scope_type != "team"
+        or action != catalog_action(permission)
+    ):
         return teams().none()
     grants = RoleAssignment.objects.filter(
         membership__in=eligible_memberships(principal),

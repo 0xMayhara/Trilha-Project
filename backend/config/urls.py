@@ -11,6 +11,7 @@ urlpatterns = [
     path("api/v1/rbac/me/", OwnAccessView.as_view(), name="rbac-me"),
     path("api/v1/teams/", TeamListView.as_view(), name="team-list"),
     path("api/v1/teams/<uuid:pk>/", TeamDetailView.as_view(), name="team-detail"),
+    path("api/v1/assets/", include("apps.assets.urls")),
 ]
 
 handler400 = "apps.core.views.bad_request"

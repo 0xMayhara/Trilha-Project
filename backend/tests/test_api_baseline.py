@@ -183,6 +183,16 @@ def test_method_not_allowed_returns_405_envelope(api_client):
     _assert_envelope(response, 405, "method_not_allowed")
 
 
+def test_conflict_returns_409_envelope():
+    from apps.core.api.exceptions import Conflict, exception_handler
+
+    response = exception_handler(Conflict("The asset changed. Reload and try again."), {})
+
+    assert response.status_code == 409
+    assert response.data["error"]["code"] == "conflict"
+    assert response.data["error"]["message"] == "The asset changed. Reload and try again."
+
+
 @TEST_URLS
 def test_unhandled_exception_returns_generic_envelope_cwe_209(api_client, user):
     api_client.force_login(user)
@@ -249,6 +259,8 @@ def test_default_throttles_are_configured():
         "login_username",
         "password_set",
         "password_change",
+        # Per-user asset mutations (SPEC-0005 SEC-30).
+        "asset_write",
     }
 
 

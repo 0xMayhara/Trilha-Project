@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     "apps.audit",
     "apps.teams",
     "apps.rbac",
+    "apps.assets",
 ]
 
 MIDDLEWARE = [
@@ -168,6 +169,8 @@ REST_FRAMEWORK = {
         "login_username": env_str("DJANGO_THROTTLE_LOGIN_USERNAME_RATE", "10/hour"),
         "password_set": env_str("DJANGO_THROTTLE_PASSWORD_SET_RATE", "10/hour"),
         "password_change": env_str("DJANGO_THROTTLE_PASSWORD_CHANGE_RATE", "10/hour"),
+        # Per-user asset mutations (SPEC-0005 SEC-30); reads never consume this budget.
+        "asset_write": env_str("DJANGO_THROTTLE_ASSET_WRITE_RATE", "60/min"),
     },
     # Exactly one trusted proxy, which overwrites X-Forwarded-For (SEC-18).
     "NUM_PROXIES": 1,
