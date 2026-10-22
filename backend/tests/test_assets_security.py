@@ -842,6 +842,11 @@ def test_asset_audit_and_logs_use_allowlists(world, caplog):
     denial = next(r for r in caplog.records if r.getMessage() == "authorization_denied")
     assert (denial.operation, denial.actor_id) == ("read", str(outsider.pk))
     assert not hasattr(denial, "asset_id")
+    # Logged identifiers are canonical UUID text; anything else is refused, never logged (CWE-117).
+    assert views._uuid_text(outsider.pk) == str(outsider.pk)
+    for forged in ("x\nlevel=CRITICAL", f"{outsider.pk}\r\n", "", None):
+        with pytest.raises(ValueError):
+            views._uuid_text(forged)
 
 
 # SEC-16 — services validate every caller; the database backs them (T-16, CWE-20)
