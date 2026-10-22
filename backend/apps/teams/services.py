@@ -3,7 +3,7 @@
 from apps.accounts.selectors import users
 from apps.audit.changes import snapshot
 from apps.rbac import events
-from apps.rbac.exceptions import RbacError
+from apps.rbac.exceptions import RbacConflict
 from apps.rbac.policy import administrative
 from apps.rbac.selectors import assignments
 from apps.rbac.services import locked_activation_snapshot, revoke_role
@@ -28,7 +28,7 @@ def update_team(principal, team_id, *, name):
     validate_name(name)
     before = snapshot(team, ("name",))
     if team.name == name:
-        raise RbacError("The team name is unchanged.")
+        raise RbacConflict("unchanged", "The team name is unchanged.")
     team.name = name
     team.save(update_fields=["name"])
     events.emit(principal, "teams.team_updated", team, before=before, fields=("name",))
@@ -39,7 +39,7 @@ def update_team(principal, team_id, *, name):
 def deactivate_team(principal, team_id):
     team = Team.objects.select_for_update().get(pk=team_id)
     if not team.is_active:
-        raise RbacError("Team is already inactive.")
+        raise RbacConflict("state", "Team is already inactive.")
     before = snapshot(team, ("is_active",))
     team.is_active = False
     team.save(update_fields=["is_active"])
@@ -51,7 +51,7 @@ def deactivate_team(principal, team_id):
 def preview_team_activation(principal, team_id):
     team, preview = locked_activation_snapshot(team_id)
     if team.is_active:
-        raise RbacError("Team is already active.")
+        raise RbacConflict("state", "Team is already active.")
     return preview
 
 
@@ -59,7 +59,9 @@ def preview_team_activation(principal, team_id):
 def activate_team(principal, team_id, expected_revision, confirmation_code):
     team, preview = locked_activation_snapshot(team_id)
     if team.is_active or confirmation_code != team.code or expected_revision != preview.revision:
-        raise RbacError("Activation requires matching confirmation and a current inactive preview.")
+        raise RbacConflict(
+            "state", "Activation requires matching confirmation and a current inactive preview."
+        )
     before = snapshot(team, ("is_active",))
     team.is_active = True
     team.save(update_fields=["is_active"])
@@ -82,7 +84,7 @@ def add_member(principal, team_id, user_id):
     team = Team.objects.select_for_update().get(pk=team_id)
     user = users().select_for_update().get(pk=user_id)
     if not user.is_active:
-        raise RbacError("New memberships require an enabled account.")
+        raise RbacConflict("state", "New memberships require an enabled account.")
     membership = Membership.objects.create(team=team, user=user)
     events.emit(principal, "teams.membership_created", membership, fields=("user_id", "team_id"))
     return membership

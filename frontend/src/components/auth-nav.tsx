@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { clearOwnAccess } from "@/lib/access";
+import { clearAdminQueries, fetchPlatformSelf, platformKey, type PlatformSelf } from "@/lib/admin";
 import { clearAssetQueries } from "@/lib/assets";
 
 import {
@@ -16,14 +17,29 @@ import {
   SESSION_QUERY_KEY,
 } from "@/lib/auth";
 
+/** Shown from the server's platform state only; hiding it is UX, the API decides (SEC-32). */
+export function AdministrationLink({ platform }: { platform: PlatformSelf | undefined }) {
+  return platform?.is_admin === true ? (
+    <Link href="/admin" className="underline">
+      Administration
+    </Link>
+  ) : null;
+}
+
 export function AuthNav() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data: user } = useQuery({ queryKey: SESSION_QUERY_KEY, queryFn: fetchSessionUser });
+  const platform = useQuery({
+    queryKey: platformKey(user?.id ?? ""),
+    queryFn: ({ signal }) => fetchPlatformSelf(signal),
+    enabled: Boolean(user),
+  });
   useEffect(() => {
     if (user === null) {
       void clearOwnAccess(queryClient);
       void clearAssetQueries(queryClient);
+      void clearAdminQueries(queryClient);
     }
   }, [user, queryClient]);
   const logout = useMutation({
@@ -36,6 +52,7 @@ export function AuthNav() {
       }
       await clearOwnAccess(queryClient);
       await clearAssetQueries(queryClient);
+      await clearAdminQueries(queryClient);
       queryClient.setQueryData(SESSION_QUERY_KEY, null);
       router.push("/login");
     },
@@ -54,6 +71,7 @@ export function AuthNav() {
   return (
     <div className="flex items-center gap-4 text-sm">
       <span className="text-neutral-600">Signed in as {user.username}</span>
+      <AdministrationLink platform={platform.data} />
       <Link href="/assets" className="underline">Assets</Link>
       <Link href="/account/access" className="underline">Your access</Link>
       <Link href="/account/password" className="underline">

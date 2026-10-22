@@ -83,7 +83,7 @@ def test_refused_commands_fail_without_changes(args):
 
 def test_account_commands_accept_no_password_argument_cwe_214():
     for name in ACCOUNT_COMMANDS:
-        parser = load_command_class("apps.accounts", name).create_parser("manage.py", name)
+        parser = load_command_class(get_commands()[name], name).create_parser("manage.py", name)
         options = [opt for action in parser._actions for opt in action.option_strings]
         assert not [opt for opt in options if "pass" in opt.lower()], name
 

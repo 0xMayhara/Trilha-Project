@@ -5,7 +5,7 @@ from rest_framework.permissions import BasePermission
 
 from apps.rbac.policy import active_user
 from apps.rbac.principals import session_principal
-from apps.rbac.selectors import can_access
+from apps.rbac.selectors import can_access, is_platform_admin
 
 logger = logging.getLogger("apps.rbac")
 
@@ -26,3 +26,21 @@ class ViewTeam(ActiveSession):
                 extra={"operation": "view_team", "actor_id": str(request.user.pk)},
             )
         return allowed
+
+
+class PlatformAdmin(ActiveSession):
+    """Admin-only reads: 403 before any lookup for every non-Admin, logged, not audited (SEC-19)."""
+
+    def has_permission(self, request, view):
+        super().has_permission(request, view)
+        if is_platform_admin(session_principal(request.user)):
+            return True
+        logger.warning(
+            "authorization_denied",
+            extra={
+                "operation": getattr(view, "operation", "read_directory"),
+                "actor_id": str(request.user.pk),
+                "outcome": "denied",
+            },
+        )
+        return False
