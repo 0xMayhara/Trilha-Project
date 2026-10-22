@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     "apps.audit",
     "apps.teams",
     "apps.rbac",
+    "apps.assets",
 ]
 
 MIDDLEWARE = [
