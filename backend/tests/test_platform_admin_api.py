@@ -1092,3 +1092,44 @@ def test_admin_object_matrix_answers_404_for_missing_and_swapped_ids(world):
         root.post(f"{ADMIN}teams/{world.alpha.pk}/members/", {"user_id": "nope"}).status_code == 400
     )
     assert state() == before
+
+
+def test_admin_error_text_comes_only_from_the_allowlist(world, monkeypatch):
+    """SEC-30 / CWE-209: every literal domain message is allowlisted; anything else is generic."""
+    import ast
+    from pathlib import Path
+
+    from apps.rbac import admin_views
+    from apps.rbac.exceptions import RbacConflict, RbacInvalid
+
+    raisers = {"RbacConflict", "RbacInvalid", "AccountConflict", "AccountError", "ValidationError"}
+    root = Path(__file__).resolve().parents[1] / "apps"
+    files = [*(root / "rbac").rglob("*.py"), *(root / "teams").rglob("*.py")]
+    files += [root / "accounts" / "services.py"]
+    literals = set()
+    for path in files:
+        if "migrations" in path.parts or "management" in path.parts:
+            continue
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.Call) and getattr(node.func, "id", None) in raisers:
+                texts = [a.value for a in node.args if isinstance(a, ast.Constant)]
+                if texts and isinstance(texts[-1], str) and texts[-1].endswith((".", "-")):
+                    literals.add(texts[-1])
+    literals -= {"Expected a UUID.", "Choose true or false."}  # serializer field errors, not domain
+    assert literals and literals <= set(admin_views.PUBLIC_MESSAGES), literals - set(
+        admin_views.PUBLIC_MESSAGES
+    )
+    root_browser = login_as(world.root)
+    for error, status in (
+        (RbacConflict("state", "duplicate key (code)=(alpha) in teams_team"), 409),
+        (RbacInvalid("Value 'x' is not a valid choice; SELECT 1"), 400),
+    ):
+
+        def raising(*args, error=error, **kwargs):
+            raise error
+
+        monkeypatch.setattr(teams, "update_team", raising)
+        response = root_browser.patch(f"{ADMIN}teams/{world.alpha.pk}/", {"name": "X"})
+        assert response.status_code == status
+        text = response.content.decode()
+        assert "teams_team" not in text and "SELECT" not in text and "'x'" not in text

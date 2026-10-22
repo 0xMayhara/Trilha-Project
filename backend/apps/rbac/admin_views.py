@@ -56,6 +56,49 @@ from apps.teams import services as teams
 logger = logging.getLogger("apps.rbac")
 NO_STORE = {"Cache-Control": "no-store"}
 CONFLICT = "The request conflicts with the current state."
+INVALID = "Invalid value. Check the form and try again."
+# The only domain texts a response may carry (SEC-30, CWE-209). Any other text, such as a validator
+# message with interpolated values, is replaced by the generic one. A test keeps this list complete.
+PUBLIC_MESSAGES = {
+    text: text
+    for text in (
+        CONFLICT,
+        "A user with that username already exists.",
+        "Activation requires matching confirmation and a current inactive preview.",
+        "Admin grants require an enabled account.",
+        "At least one other enabled Admin must remain.",
+        "Choose analyst, engineer or no position.",
+        "Codes require 1-63 lowercase ASCII letters, digits, _ or -.",
+        "Configuration changed; request a new activation preview.",
+        "Enter a valid email address.",
+        "Names and email must not contain control characters.",
+        "Names require 1-150 trimmed characters without controls or surrogates.",
+        "New grants require an enabled account.",
+        "New memberships require an enabled account.",
+        "Only the first name, last name and email can change.",
+        "Permission already granted.",
+        "Permission is not granted.",
+        "Positions require an enabled account.",
+        "Team is already active.",
+        "Team is already inactive.",
+        "The account is already an Admin.",
+        "The account is already disabled.",
+        "The account is already enabled.",
+        "The account is disabled; enable it to issue a new link.",
+        "The account is not an Admin.",
+        "The position is unchanged.",
+        "The role name is unchanged.",
+        "The team name is unchanged.",
+        "Unsupported permission.",
+        "Usernames are 1-150 lowercase ASCII characters: a-z, 0-9 and . _ @ + -",
+        "You cannot disable your own account.",
+        "You cannot revoke your own Admin grant.",
+    )
+}
+
+
+def public_text(error, fallback):
+    return PUBLIC_MESSAGES.get(str(error), fallback)
 
 
 class AdminView(GenericAPIView):
@@ -95,9 +138,10 @@ class AdminView(GenericAPIView):
         except RbacNotFound:
             raise exceptions.NotFound from None
         except RbacInvalid as exc:
-            raise exceptions.ValidationError({"non_field_errors": [str(exc)]}) from None
+            message = public_text(exc, INVALID)
+            raise exceptions.ValidationError({"non_field_errors": [message]}) from None
         except RbacConflict as exc:
-            raise Conflict(str(exc)) from None
+            raise Conflict(public_text(exc, CONFLICT)) from None
         except RbacError:
             raise Conflict(CONFLICT) from None
 
