@@ -7,7 +7,7 @@ from apps.accounts.selectors import users
 from apps.audit.models import Outcome
 from apps.audit.services import record_event
 from apps.audit.types import Actor
-from apps.rbac.exceptions import AdministrationDenied, RbacError
+from apps.rbac.exceptions import AdministrationDenied, RbacConflict, RbacInvalid, RbacNotFound
 from apps.rbac.principals import UserPrincipal, is_infrastructure_operator
 
 ADMIN_OPERATIONS = frozenset(
@@ -65,10 +65,12 @@ def administrative(function):
         try:
             with transaction.atomic():
                 return function(principal, *args, **kwargs)
-        except (IntegrityError, ObjectDoesNotExist) as exc:
-            raise RbacError("The requested relationship is missing or already exists.") from exc
+        except ObjectDoesNotExist as exc:
+            raise RbacNotFound from exc
+        except IntegrityError as exc:
+            raise RbacConflict("state", "The request conflicts with the current state.") from exc
         except ValidationError as exc:
-            raise RbacError("Invalid domain value.") from exc
+            raise RbacInvalid(" ".join(exc.messages)) from exc
 
     return invoke
 
