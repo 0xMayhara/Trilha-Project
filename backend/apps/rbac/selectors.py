@@ -3,7 +3,7 @@
 from django.db.models import Exists, OuterRef, Prefetch
 
 from apps.rbac.catalog import SUPPORTED_PERMISSIONS, catalog_action, catalog_permissions
-from apps.rbac.models import Role, RoleAssignment
+from apps.rbac.models import PlatformAccess, Role, RoleAssignment
 from apps.rbac.principals import UserPrincipal
 from apps.teams.selectors import memberships, teams
 
@@ -71,3 +71,19 @@ def roles():
 
 def assignments():
     return RoleAssignment.objects.all()
+
+
+def is_platform_admin(principal):
+    """BR-01: an enabled account whose platform record holds the Admin grant, in one fresh query.
+    Native flags, groups, usernames and request data never enter this predicate (SEC-03)."""
+    return (
+        isinstance(principal, UserPrincipal)
+        and PlatformAccess.objects.filter(
+            pk=principal.user_id, is_admin=True, user__is_active=True
+        ).exists()
+    )
+
+
+def platform_access(user_id):
+    """The user's platform record, or an unsaved default (no grant, no position)."""
+    return PlatformAccess.objects.filter(pk=user_id).first() or PlatformAccess(user_id=user_id)

@@ -7,6 +7,13 @@ class AdministrationDenied(RbacError):
         super().__init__("Administration is not allowed.")
 
 
+class ReauthenticationRequired(RbacError):
+    """A user principal has no step-up proof younger than the window (SPEC-0010 BR-07)."""
+
+    def __init__(self):
+        super().__init__("Confirm your password to continue.")
+
+
 class RbacNotFound(RbacError):
     """A referenced user, team, role, membership or binding does not exist."""
 
