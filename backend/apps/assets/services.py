@@ -29,9 +29,9 @@ from apps.assets.validation import (
     canonical_hostname,
     canonical_ip_list,
     display_ips,
-    normalize_text,
 )
 from apps.audit.changes import snapshot
+from apps.core.text import normalize_text
 from apps.rbac import events
 from apps.rbac.catalog import catalog_action
 from apps.rbac.locking import bound_lock_waits, lock_failure

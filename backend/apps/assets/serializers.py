@@ -8,7 +8,8 @@ from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 
 from apps.assets.models import Asset, Criticality, Environment, Kind, Status
-from apps.assets.validation import QUERY_MAX_LENGTH, canonical_ip, display_ips, normalize_text
+from apps.assets.validation import canonical_ip, display_ips
+from apps.core.text import QUERY_MAX_LENGTH, normalize_text
 from apps.teams.serializers import TeamSummarySerializer
 
 _TEXT = (str,)

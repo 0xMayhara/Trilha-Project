@@ -3,33 +3,14 @@ HTTP serializers, services and the `ip` filter."""
 
 import ipaddress
 import re
-import unicodedata
 
 from django.core.exceptions import ValidationError
 
-TEXT_MAX_LENGTH = 150
-QUERY_MAX_LENGTH = 100
 HOSTNAME_MAX_LENGTH = 253
 HOSTNAME_PATTERN = r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$"
 MAX_IP_ADDRESSES = 16
 _IP_TEXT_MAX_LENGTH = 45
-# Controls, surrogates and format characters (bidi overrides, zero-width) are never display text.
-_REJECTED_CATEGORIES = frozenset({"Cc", "Cs", "Cf"})
 _LIMITED_BROADCAST = ipaddress.IPv4Address("255.255.255.255")
-
-
-def normalize_text(value, *, required, max_length=TEXT_MAX_LENGTH):
-    """NFC first, then trim, then length and character-category checks (M-3, F-19)."""
-    if not isinstance(value, str):
-        raise ValidationError("Expected text.")
-    value = unicodedata.normalize("NFC", value).strip()
-    if required and not value:
-        raise ValidationError("This field may not be blank.")
-    if len(value) > max_length:
-        raise ValidationError(f"Use at most {max_length} characters.")
-    if any(unicodedata.category(char) in _REJECTED_CATEGORIES for char in value):
-        raise ValidationError("Control, surrogate and format characters are not allowed.")
-    return value
 
 
 def canonical_hostname(value):
