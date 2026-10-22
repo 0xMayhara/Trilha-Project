@@ -82,6 +82,22 @@ describe("SPEC-0010 administration client", () => {
     expect(activationPreviewSchema.parse(preview).revision).toHaveLength(64);
     expect(() => activationPreviewSchema.parse({ ...preview, revision: "A".repeat(64) })).toThrow();
     expect(() => auditEntrySchema.parse({ event_id: "x" })).toThrow();
+    // Real request IDs from the proxy have no UUID version digit; the trail must still render.
+    const entry = {
+      event_id: id,
+      occurred_at: "2026-10-22T22:40:29Z",
+      actor: { type: "user", id, label: "antonio" },
+      action: "accounts.login_succeeded",
+      outcome: "success",
+      resource: { type: "accounts.user", id },
+      source: "http",
+      request_id: "7ca0049a-c8e2-ef8b-a752-63e00aabc0fd",
+      client_ip: "10.89.5.4",
+      changes: {},
+      metadata: {},
+    };
+    expect(auditEntrySchema.parse(entry).request_id).toBe(entry.request_id);
+    expect(() => auditEntrySchema.parse({ ...entry, request_id: "not-an-id" })).toThrow();
   });
 
   it("test_step_up_dialog_retries_once_after_success", async () => {

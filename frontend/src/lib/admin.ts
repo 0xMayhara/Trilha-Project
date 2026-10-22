@@ -94,15 +94,17 @@ export const activationPreviewSchema = z.object({
 });
 export type ActivationPreview = z.infer<typeof activationPreviewSchema>;
 
+// Audit entries are stored records shown as text. Their IDs are any 8-4-4-4-12 hex value the backend
+// accepted (request IDs come from the proxy and carry no UUID version), so the RFC check is not used.
 export const auditEntrySchema = z.object({
-  event_id: z.uuid(),
+  event_id: z.guid(),
   occurred_at: z.string(),
-  actor: z.object({ type: z.string(), id: z.uuid().nullable(), label: z.string() }),
+  actor: z.object({ type: z.string(), id: z.guid().nullable(), label: z.string() }),
   action: z.string(),
   outcome: z.string(),
   resource: z.object({ type: z.string(), id: z.string() }),
   source: z.string(),
-  request_id: z.uuid().nullable(),
+  request_id: z.guid().nullable(),
   client_ip: z.string().nullable(),
   changes: z.record(z.string(), z.unknown()),
   metadata: z.record(z.string(), z.unknown()),
