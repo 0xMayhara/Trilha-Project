@@ -1364,6 +1364,29 @@ def test_asset_error_responses_use_fixed_messages_cwe_209(world, caplog):
     assert canary not in formatted_logs(caplog)
 
 
+def test_request_keys_cannot_bind_adapter_parameters():
+    """Request data reaches only the domain call, never the adapter's operation label."""
+    assert list(inspect.signature(views.AssetAPIView.run).parameters) == [
+        "self",
+        "operation",
+        "call",
+    ]
+    world = build_world()
+    for key in ("operation", "function"):
+        body = {"team_id": str(world.alpha.pk), "name": "X", "kind": "server", key: "create"}
+        response = world.client.post(API, body, format="json")
+        assert response.status_code == 400
+        assert set(response.json()["error"]["details"]) == {key}
+    with pytest.raises(
+        ValidationError
+    ) as caught:  # the service refuses it too, if it ever got there
+        services.create_asset(
+            world.principal, team_id=world.alpha.pk, name="X", kind="server", operation="create"
+        )
+    assert set(caught.value.message_dict) == {"operation"}
+    assert Asset.objects.count() == 1
+
+
 # Functional contract
 
 

@@ -53,10 +53,11 @@ class AssetAPIView(APIView):
             throttles.append(AssetWriteThrottle())
         return throttles
 
-    def run(self, operation, function, *args, **kwargs):
-        """Calls one domain use case and translates its errors; no rule is decided here."""
+    def run(self, operation, call):
+        """Calls one domain use case with the session principal and translates its errors; no rule
+        is decided here. Request data reaches only `call`, never this adapter's own arguments."""
         try:
-            return function(session_principal(self.request.user), *args, **kwargs)
+            return call(session_principal(self.request.user))
         except AssetNotFound:
             self._denied(operation)
             raise exceptions.NotFound from None
@@ -96,20 +97,23 @@ class AssetListView(AssetAPIView, ListAPIView):
 
     def post(self, request):
         data = parse_body(request.data, CREATE_FIELDS, required=("team_id", "name", "kind"))
-        asset = self.run("create", services.create_asset, **data)
+        asset = self.run("create", lambda principal: services.create_asset(principal, **data))
         return Response(AssetSerializer(asset).data, status=201)
 
 
 class AssetDetailView(AssetAPIView):
     def get(self, request, pk):
         validate_query(request, paginated=False)
-        asset = self.run("read", viewable_asset, pk)
+        asset = self.run("read", lambda principal: viewable_asset(principal, pk))
         return Response(AssetSerializer(asset).data)
 
     def patch(self, request, pk):
         data = parse_body(request.data, UPDATE_FIELDS, required=("version",))
         version = data.pop("version")
-        asset = self.run("update", services.update_asset, pk, version=version, changes=data)
+        asset = self.run(
+            "update",
+            lambda principal: services.update_asset(principal, pk, version=version, changes=data),
+        )
         return Response(AssetSerializer(asset).data)
 
 
@@ -119,7 +123,10 @@ class AssetTransitionView(AssetAPIView):
 
     def post(self, request, pk):
         data = parse_body(request.data, TRANSITION_FIELDS, required=("version",))
-        asset = self.run(self.operation, type(self).service, pk, version=data["version"])
+        service = type(self).service
+        asset = self.run(
+            self.operation, lambda principal: service(principal, pk, version=data["version"])
+        )
         return Response(AssetSerializer(asset).data)
 
 
@@ -138,9 +145,8 @@ class AssetTransferView(AssetAPIView):
         data = parse_body(request.data, TRANSFER_FIELDS, required=("version", "team_id"))
         asset = self.run(
             "transfer",
-            services.transfer_asset,
-            pk,
-            version=data["version"],
-            team_id=data["team_id"],
+            lambda principal: services.transfer_asset(
+                principal, pk, version=data["version"], team_id=data["team_id"]
+            ),
         )
         return Response(AssetSerializer(asset).data)
