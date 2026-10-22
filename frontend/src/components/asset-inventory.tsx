@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 
 import { AssetTable } from "@/components/asset-table";
+import { adminKey, fetchPlatformSelf, fetchTeams, platformKey } from "@/lib/admin";
 import {
   accessTeamsKey,
   ASSET_KINDS,
@@ -42,6 +43,19 @@ export function AssetInventory() {
     queryFn: ({ signal }) => fetchAccessTeams(signal),
     enabled: Boolean(user),
   });
+  // Admins read every team's assets (SPEC-0010 BR-12), so their team filter lists every team.
+  const platform = useQuery({
+    queryKey: platformKey(user?.id ?? ""),
+    queryFn: ({ signal }) => fetchPlatformSelf(signal),
+    enabled: Boolean(user),
+  });
+  const isAdmin = platform.data?.is_admin === true;
+  const allTeams = useQuery({
+    queryKey: adminKey(user?.id ?? "", "teams", "asset-filter"),
+    // shortcut: the first 100 teams; add a search box if a deployment ever has more.
+    queryFn: ({ signal }) => fetchTeams({}, 1, signal, 100),
+    enabled: Boolean(user) && isAdmin,
+  });
   const assets = useQuery({
     queryKey: assetListKey(user?.id ?? "", filters, page),
     queryFn: ({ signal }) => fetchAssets(filters, page, signal),
@@ -54,7 +68,7 @@ export function AssetInventory() {
   }, [assets.error, access.error, client]);
 
   if (!user) return null;
-  const viewable = teamsWith(access.data, "assets.view_asset");
+  const viewable = isAdmin ? (allTeams.data?.results ?? []) : teamsWith(access.data, "assets.view_asset");
   const canRegister = teamsWith(access.data, "assets.add_asset", "assets.view_asset").length > 0;
   const errors = fieldErrors(assets.error);
   const filtered = Object.keys(filters).some((key) => key !== "status") || filters.status === "retired";
@@ -91,7 +105,7 @@ export function AssetInventory() {
         <label className="flex flex-col gap-1">
           Team
           <select name="team" defaultValue={filters.team ?? ""} className={INPUT}>
-            <option value="">All my teams</option>
+            <option value="">{isAdmin ? "All teams" : "All my teams"}</option>
             {viewable.map((team) => (
               <option key={team.id} value={team.id}>
                 {team.name} ({team.code})

@@ -33,8 +33,17 @@ class Conflict(exceptions.APIException):
     default_code = "conflict"
 
 
+class StepUpRequired(exceptions.APIException):
+    """A sensitive operation needs a recent password re-authentication (SPEC-0010 BR-07)."""
+
+    status_code = 403
+    default_detail = "Confirm your password to continue."
+    default_code = "reauthentication_required"
+
+
 _CODES: dict[type[exceptions.APIException], str] = {
     Conflict: "conflict",
+    StepUpRequired: "reauthentication_required",
     exceptions.ValidationError: "validation_error",
     exceptions.ParseError: "parse_error",
     exceptions.NotAuthenticated: "not_authenticated",

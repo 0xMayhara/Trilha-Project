@@ -29,6 +29,28 @@ def operator_command(function):
     return invoke
 
 
+def account_command(function):
+    """Account and Admin commands print the domain's fixed refusal message, as the SPEC-0003
+    commands always did; other failures propagate unchanged."""
+
+    @wraps(function)
+    def invoke(command, *args, **options):
+        try:
+            with audit_source("command"):
+                function(command, infrastructure_operator(), options)
+        except RbacError as exc:
+            raise CommandError(str(exc)) from None
+
+    return invoke
+
+
+def account_id(username):
+    try:
+        return user_id(username)
+    except ObjectDoesNotExist:
+        raise CommandError("No account has that username.") from None
+
+
 def team_id(code):
     return teams().values_list("pk", flat=True).get(code=code)
 

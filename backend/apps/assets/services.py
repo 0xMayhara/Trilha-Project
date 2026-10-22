@@ -11,7 +11,7 @@ import uuid
 from contextlib import contextmanager
 
 from django.core.exceptions import ValidationError
-from django.db import IntegrityError, OperationalError, connection, transaction
+from django.db import IntegrityError, OperationalError, transaction
 
 from apps.accounts.selectors import users
 from apps.assets.exceptions import (
@@ -29,11 +29,12 @@ from apps.assets.validation import (
     canonical_hostname,
     canonical_ip_list,
     display_ips,
-    normalize_text,
 )
 from apps.audit.changes import snapshot
+from apps.core.text import normalize_text
 from apps.rbac import events
 from apps.rbac.catalog import catalog_action
+from apps.rbac.locking import bound_lock_waits, lock_failure
 from apps.rbac.principals import UserPrincipal
 from apps.rbac.selectors import assignments, can_access, roles, scoped_teams
 from apps.teams.selectors import teams
@@ -41,7 +42,6 @@ from apps.teams.selectors import teams
 logger = logging.getLogger("apps.assets")
 
 ASSET_LOCK_TIMEOUT = "5s"
-_LOCK_FAILURES = {"55P03": "lock_timeout", "40P01": "deadlock"}
 VIEW, ADD, CHANGE, RETIRE, TRANSFER = (
     "assets.view_asset",
     "assets.add_asset",
@@ -136,10 +136,7 @@ def _mutation(operation, principal):
     """One transaction with bounded lock waits; database failures are reported without details."""
     try:
         with transaction.atomic():
-            with connection.cursor() as cursor:
-                # The only raw SQL in SPEC-0005 (F-21): static text, a server constant bound as a
-                # parameter, transaction-local so no other module's lock behavior changes.
-                cursor.execute("SELECT set_config('lock_timeout', %s, true)", [ASSET_LOCK_TIMEOUT])
+            bound_lock_waits(ASSET_LOCK_TIMEOUT)
             yield
     except IntegrityError as exc:
         cause = exc.__cause__
@@ -154,7 +151,7 @@ def _mutation(operation, principal):
         )
         raise AssetIntegrityFailure from None
     except OperationalError as exc:
-        reason = _LOCK_FAILURES.get(getattr(exc.__cause__, "sqlstate", None))
+        reason = lock_failure(exc)
         if reason is None:
             raise
         _lock_unavailable(operation, principal, reason)

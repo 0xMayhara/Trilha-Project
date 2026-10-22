@@ -34,7 +34,8 @@ To reach PostgreSQL and Redis from the host during development, add the override
 
 ## Accounts
 
-There is no sign-up and no email. An operator manages accounts with audited commands in the backend
+There is no sign-up and no email. Platform Admins manage accounts at `/admin/users` (see
+[Administration](#administration)); the operator can do the same with audited commands in the backend
 container:
 
 ```sh
@@ -58,11 +59,41 @@ docker compose exec backend python manage.py accounts_enable_user alice
 - Sessions last at most 8 hours and end when the browser closes. Remove expired sessions daily, for
   example from cron: `docker compose exec -T backend python manage.py clearsessions`.
 
+## Administration
+
+A platform Admin manages users, teams, memberships, roles, positions and other Admins at `/admin`, and
+searches the audit trail at `/admin/audit`. Admin is an explicit grant, not a Django flag, a group or a
+team role.
+
+```sh
+# Bootstrap the first Admin (no Admin exists after installation, and there is no web sign-up).
+docker compose exec backend python manage.py accounts_create_user alice --first-name Alice
+docker compose exec backend python manage.py rbac_grant_admin alice
+# Operational position: analyst, engineer or none. A position grants no permission by itself.
+docker compose exec backend python manage.py rbac_set_position alice engineer
+# Revoke Admin authority. At least one other enabled Admin must remain.
+docker compose exec backend python manage.py rbac_revoke_admin bob
+```
+
+- Every administrative change in the web UI asks for your password if you have not confirmed it in the
+  last 10 minutes. Confirming starts a fresh session key and restarts the 8-hour session lifetime.
+- An Admin cannot revoke their own grant or disable their own account, and the last enabled Admin can
+  never be revoked or disabled, from the web UI or the commands.
+- Disabling an account removes its Admin grant. Enabling it again never restores it: grant it anew.
+- Admins read every team's assets but change them only through ordinary team roles.
+- Administrative changes are limited per user (`DJANGO_THROTTLE_ADMIN_WRITE_RATE`, default `60/min`).
+  Password confirmations share the password-change budget (`DJANGO_THROTTLE_PASSWORD_CHANGE_RATE`).
+
+**Recovery** when no Admin can sign in (lost password or disabled account): issue a link with
+`accounts_password_link <admin>`, or `accounts_enable_user <admin>` followed by `rbac_grant_admin <admin>`.
+To replace an Admin, create and grant the new one first, then `rbac_revoke_admin` or
+`accounts_disable_user` the old one.
+
 ## Teams and roles
 
 Access is granted per team: a user sees a team only through a role assigned in that team, and a role
 held in one team never grants anything in another. Existing users start with no access. Configure it
-with audited commands in the backend container:
+at `/admin/teams` and `/admin/roles`, or with audited commands in the backend container:
 
 ```sh
 # Create a team (it starts inactive) and a reusable role, then give the role a permission.

@@ -22,6 +22,10 @@ class PasswordChangeSerializer(serializers.Serializer):
     new_password = _password_field()
 
 
+class ReauthenticateSerializer(serializers.Serializer):
+    password = _password_field()
+
+
 class PasswordSetSerializer(serializers.Serializer):
     uid = serializers.CharField(max_length=64)
     token = serializers.CharField(max_length=128)

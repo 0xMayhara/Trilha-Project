@@ -14,6 +14,7 @@ from apps.accounts.serializers import (
     LoginSerializer,
     PasswordChangeSerializer,
     PasswordSetSerializer,
+    ReauthenticateSerializer,
     UserSummarySerializer,
 )
 from apps.accounts.throttles import (
@@ -22,6 +23,7 @@ from apps.accounts.throttles import (
     PasswordChangeThrottle,
     PasswordSetThrottle,
 )
+from apps.core.api.parsing import StrictJSONParser, parse_body
 from apps.core.errors import error_payload
 
 
@@ -101,6 +103,27 @@ class PasswordChangeView(APIView):
             ) from None
         except DjangoValidationError as exc:
             raise ValidationError({"new_password": exc.messages}) from None
+        return Response(status=204)
+
+
+class ReauthenticateView(APIView):
+    """Step-up re-authentication of the session user (SPEC-0010 BR-08). Session authentication
+    enforces CSRF; the per-user budget is shared with password changes (SEC-11)."""
+
+    permission_classes = (IsAuthenticated,)
+    parser_classes = (StrictJSONParser,)
+    throttle_classes = (PasswordChangeThrottle,)
+
+    def post(self, request: Request) -> Response:
+        parse_body(request.data, {"password": (str,)}, required=("password",))
+        data = _validated(ReauthenticateSerializer, request)
+        try:
+            services.reauthenticate(request, data["password"])
+        except services.InvalidCredentials:
+            # 400, not 401: the session stays valid and the dialog shows one generic error.
+            return Response(
+                error_payload("invalid_credentials", "The password is incorrect."), status=400
+            )
         return Response(status=204)
 
 
