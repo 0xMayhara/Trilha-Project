@@ -4,7 +4,7 @@ from django.db.models import Q
 
 from apps.assets.exceptions import AssetForbidden, AssetNotFound
 from apps.assets.models import Asset
-from apps.rbac.selectors import authorized_teams, can_access, scoped_teams
+from apps.rbac.selectors import authorized_teams, can_access, is_platform_admin, scoped_teams
 
 VIEW = "assets.view_asset"
 
@@ -15,7 +15,11 @@ def scoped_assets(principal):
 
 
 def visible_assets(principal):
-    """Assets the principal may view, through the same membership that grants the permission."""
+    """Assets the principal may view, through the same membership that grants the permission. A
+    current platform Admin reads every team's assets (SPEC-0010 BR-12). This widens reads only:
+    mutations scope through `scoped_assets`, unchanged (SEC-23)."""
+    if is_platform_admin(principal):
+        return Asset.objects.all()
     return Asset.objects.filter(team__in=authorized_teams(principal, VIEW))
 
 
@@ -49,6 +53,11 @@ def search_assets(
 
 
 def viewable_asset(principal, asset_id):
+    if is_platform_admin(principal):
+        try:
+            return Asset.objects.select_related("team").get(pk=asset_id)
+        except Asset.DoesNotExist:
+            raise AssetNotFound from None
     try:
         asset = scoped_assets(principal).select_related("team").get(pk=asset_id)
     except Asset.DoesNotExist:
