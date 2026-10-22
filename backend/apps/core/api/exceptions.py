@@ -24,7 +24,16 @@ _DEPENDENCY_UNAVAILABLE = (
     RedisTimeoutError,
 )
 
+class Conflict(exceptions.APIException):
+    """A request that conflicts with current state: stale version, invalid transition, duplicate."""
+
+    status_code = 409
+    default_detail = "The request conflicts with the current state."
+    default_code = "conflict"
+
+
 _CODES: dict[type[exceptions.APIException], str] = {
+    Conflict: "conflict",
     exceptions.ValidationError: "validation_error",
     exceptions.ParseError: "parse_error",
     exceptions.NotAuthenticated: "not_authenticated",
