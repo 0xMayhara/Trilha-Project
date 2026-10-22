@@ -5,6 +5,7 @@ import ast
 import logging
 import threading
 import time
+from datetime import timedelta
 from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -17,13 +18,14 @@ from django.core.management import call_command, get_commands
 from django.core.management.base import CommandError
 from django.db import IntegrityError, OperationalError, connection, transaction
 from django.db.migrations.executor import MigrationExecutor
+from django.utils import timezone
 
 from apps.accounts import services as accounts
 from apps.accounts.models import User
 from apps.assets.selectors import visible_assets
 from apps.audit.context import audit_source
 from apps.audit.models import AuditEvent
-from apps.rbac import administration, events, policy
+from apps.rbac import administration, directory, events, policy
 from apps.rbac import services as rbac
 from apps.rbac.exceptions import (
     AdministrationDenied,
@@ -717,3 +719,34 @@ def test_admin_module_boundaries():
                         assert ".management" not in node.module, path
     for path in (root / "assets").rglob("*.py"):
         assert "apps.rbac.models" not in path.read_text(), path
+
+
+# SEC-19 / SEC-20 (defense in depth) — the read selectors authorize too, before any lookup
+
+
+def test_directory_selectors_authorize_before_any_lookup():
+    admin, plain = make_admin("alice"), make_user("plain")
+    team = teams.create_team(OPERATOR, code="alpha", name="Alpha")
+    role = rbac.create_role(OPERATOR, code="reader", name="Reader")
+    membership = teams.add_member(OPERATOR, team.pk, plain.pk)
+    calls = {
+        "user_directory": lambda p: list(directory.user_directory(p)),
+        "user_detail": lambda p: directory.user_detail(p, plain.pk),
+        "team_directory": lambda p: list(directory.team_directory(p)),
+        "team_members": lambda p: list(directory.team_members(p, team.pk)),
+        "membership_detail": lambda p: directory.membership_detail(p, membership.pk),
+        "role_directory": lambda p: list(directory.role_directory(p)),
+        "role_detail": lambda p: directory.role_detail(p, role.pk),
+        "permission_catalog": directory.permission_catalog,
+        "audit_search": lambda p: list(
+            directory.audit_search(
+                p, occurred_after=timezone.now() - timedelta(days=1), occurred_before=timezone.now()
+            )
+        ),
+    }
+    for name, call in calls.items():
+        for principal in (UserPrincipal(plain.pk), OPERATOR):
+            with pytest.raises(AdministrationDenied):
+                call(principal)
+        assert call(UserPrincipal(admin.pk)) is not None, name  # reads need no step-up
+    assert not events_of("rbac.administration_denied").exists()  # reads are logged, not audited
