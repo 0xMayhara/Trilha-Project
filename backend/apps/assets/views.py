@@ -26,11 +26,11 @@ from apps.assets.serializers import (
     TRANSITION_FIELDS,
     UPDATE_FIELDS,
     AssetSerializer,
-    parse_body,
     parse_list_query,
 )
 from apps.assets.throttles import AssetWriteThrottle
 from apps.core.api.exceptions import Conflict
+from apps.core.api.parsing import parse_body
 from apps.rbac.permissions import ActiveSession
 from apps.rbac.principals import session_principal
 from apps.rbac.views import validate_query

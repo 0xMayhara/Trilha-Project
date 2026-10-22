@@ -32,22 +32,6 @@ TRANSFER_FIELDS = {"version": (int,), "team_id": _TEXT}
 LIST_FILTERS = ("status", "team", "kind", "environment", "criticality", "ip", "q")
 
 
-def parse_body(data, schema, *, required):
-    if not isinstance(data, dict):
-        raise ValidationError({"non_field_errors": ["Expected a JSON object."]})
-    errors = {key: ["This field is not accepted."] for key in data if key not in schema}
-    for key, types in schema.items():
-        if key not in data:
-            if key in required:
-                errors[key] = ["This field is required."]
-        # bool is an int subclass: true must not pass as a version.
-        elif isinstance(data[key], bool) or not isinstance(data[key], types):
-            errors[key] = ["Invalid type."]
-    if errors:
-        raise ValidationError(errors)
-    return dict(data)
-
-
 def parse_list_query(params):
     """Allowlisted filters; keys and repetition are already checked by validate_query."""
     filters = {"status": params.get("status", Status.ACTIVE)}
