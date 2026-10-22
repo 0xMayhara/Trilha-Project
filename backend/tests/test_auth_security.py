@@ -64,7 +64,8 @@ def test_allowany_views_are_allowlisted_cwe_862():
 def test_accounts_api_has_no_user_id_routes_cwe_639():
     auth_routes = [route for route, _ in api_views() if route.startswith("api/v1/auth/")]
 
-    assert len(auth_routes) == 6
+    # SPEC-0010 adds reauthenticate/, which also acts on request.user only.
+    assert len(auth_routes) == 7
     assert not [route for route in auth_routes if "<" in route]
 
 

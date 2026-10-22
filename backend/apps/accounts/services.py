@@ -7,6 +7,7 @@ failed one has rolled back (SPEC-0002 BR-04).
 
 import logging
 import re
+import time
 import uuid
 from typing import Any
 
@@ -16,6 +17,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.middleware.csrf import rotate_token
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 
@@ -34,6 +36,8 @@ _CONTROL_CHARACTERS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 _CREATED_FIELDS = ("username", "first_name", "last_name", "email", "is_active")
 _ACTIVE_FIELD = ("is_active",)
 PROFILE_FIELDS = ("first_name", "last_name", "email")
+# Server-side session key of the step-up proof (SPEC-0010 BR-08). Never sent to the client.
+STEP_UP_SESSION_KEY = "trilha_step_up"
 
 
 class AccountError(Exception):
@@ -258,6 +262,58 @@ def log_out(request: Any) -> None:
             actor=Actor.user(user), action="accounts.logged_out", resource=Resource.of(user)
         )
         logout(request)
+
+
+def reauthenticate(request: Any, password: str) -> None:
+    """Step-up re-authentication of the session user (SPEC-0010 BR-08, ADR-0007 §5).
+
+    The password is checked through the authentication backend. On success the session key and the
+    CSRF token rotate, so a cookie captured earlier stops working (SEC-12), and the server-side
+    session records which user verified when. The rewrite restarts the session lifetime, like a
+    login. Raises InvalidCredentials, with one answer for every failure (SEC-11)."""
+    user = request.user
+    verified = authenticate(request, username=user.get_username(), password=password)
+    if verified is None or verified.pk != user.pk:
+        with transaction.atomic():
+            record_event(
+                actor=Actor.user(user),
+                action="accounts.reauthentication_failed",
+                resource=Resource.of(user),
+                outcome=Outcome.FAILURE,
+                metadata={"reason": "invalid_password"},
+            )
+        logger.warning(
+            "reauthentication_failed",
+            extra={"event": "reauthentication_failed", "actor_id": str(user.pk)},
+        )
+        raise InvalidCredentials
+    with transaction.atomic():
+        record_event(
+            actor=Actor.user(verified),
+            action="accounts.reauthenticated",
+            resource=Resource.of(verified),
+        )
+        # cycle_key() plus the current hash, which a hasher upgrade during the check may change.
+        update_session_auth_hash(request, verified)
+        rotate_token(request)
+        request.session[STEP_UP_SESSION_KEY] = {
+            "user_id": str(verified.pk),
+            "verified_at": time.time(),
+        }
+
+
+def step_up_verified_at(request: Any) -> float | None:
+    """The server time of this session's last re-authentication, only when it was made by the
+    session's own user (SEC-10). Request bodies and headers never reach this value."""
+    proof = request.session.get(STEP_UP_SESSION_KEY)
+    if (
+        not isinstance(proof, dict)
+        or proof.get("user_id") != str(request.user.pk)
+        or isinstance(proof.get("verified_at"), bool)
+        or not isinstance(proof.get("verified_at"), int | float)
+    ):
+        return None
+    return float(proof["verified_at"])
 
 
 def change_password(request: Any, current_password: str, new_password: str) -> None:
