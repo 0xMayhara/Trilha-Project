@@ -24,6 +24,7 @@ _DEPENDENCY_UNAVAILABLE = (
     RedisTimeoutError,
 )
 
+
 class Conflict(exceptions.APIException):
     """A request that conflicts with current state: stale version, invalid transition, duplicate."""
 
