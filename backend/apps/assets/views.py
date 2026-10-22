@@ -51,17 +51,21 @@ class AssetAPIView(APIView):
             self._denied(operation, asset_id)
             raise exceptions.PermissionDenied from None
         except TeamUnavailable as exc:
+            self._denied(operation, reason="team_unavailable")  # probing other teams' IDs
             raise exceptions.ValidationError({"team_id": [str(exc)]}) from None
         except AssetConflict as exc:
             raise Conflict(str(exc)) from None
         except DjangoValidationError as exc:
             raise exceptions.ValidationError(exc.message_dict) from None
 
-    def _denied(self, operation, asset_id=None):
+    def _denied(self, operation, asset_id=None, reason=None):
         # IDs only; the asset ID only for in-scope 403s, never for hidden or missing assets.
+        # The submitted team ID is never logged (SPEC-0005 Logging Requirements).
         extra = {"operation": operation, "actor_id": str(self.request.user.pk), "outcome": "denied"}
         if asset_id is not None:
             extra["asset_id"] = str(asset_id)
+        if reason is not None:
+            extra["reason"] = reason
         logger.warning("authorization_denied", extra=extra)
 
 

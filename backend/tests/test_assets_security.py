@@ -306,11 +306,10 @@ def test_asset_identifier_swap_returns_404_cwe_639(world, caplog):
     grant(member, world.alpha, CHANGE)
     assert client_for(member).get(detail(world.asset)).status_code == 403
     denials = [r for r in caplog.records if r.getMessage() == "authorization_denied"]
-    assert denials and all(
-        not hasattr(r, "asset_id")
-        for r in denials
-        if r.operation != "read" or r.actor_id == str(outsider.pk)
-    )
+    hidden = [r for r in denials if r.actor_id == str(outsider.pk)]
+    assert hidden and not any(hasattr(r, "asset_id") for r in hidden)  # 404s name no asset
+    in_scope = [r for r in denials if r.actor_id == str(member.pk)]
+    assert [(r.operation, r.asset_id) for r in in_scope] == [("read", str(world.asset.pk))]
     assert reload(world.asset).version == 1
 
 
@@ -343,7 +342,7 @@ def test_asset_permission_from_team_a_cannot_act_in_team_b(world):
 # SEC-05 — create needs add + view in the target team (T-05, CWE-639)
 
 
-def test_create_asset_requires_grants_in_target_team_cwe_639(world):
+def test_create_asset_requires_grants_in_target_team_cwe_639(world, caplog):
     outsider = make_user("outsider")
     grant(outsider, world.beta, *ASSET_CODES)
     inactive = teams.create_team(OPERATOR, code="gamma", name="Gamma")
@@ -356,6 +355,9 @@ def test_create_asset_requires_grants_in_target_team_cwe_639(world):
         assert response.status_code == 400
         messages.add(json.dumps(response.json()["error"]["details"]))
     assert len(messages) == 1  # absent, inactive and foreign teams answer identically
+    probes = [r for r in caplog.records if getattr(r, "reason", None) == "team_unavailable"]
+    assert [(r.operation, r.actor_id) for r in probes] == [("create", str(outsider.pk))] * 3
+    assert str(world.alpha.pk) not in formatted_logs(caplog)
     for index, codes in enumerate(((VIEW,), (ADD,), (CHANGE, RETIRE, TRANSFER))):
         member = make_user(f"member{index}")
         grant(member, world.alpha, *codes)
