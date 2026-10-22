@@ -259,6 +259,8 @@ def test_default_throttles_are_configured():
         "login_username",
         "password_set",
         "password_change",
+        # Per-user asset mutations (SPEC-0005 SEC-30).
+        "asset_write",
     }
 
 
