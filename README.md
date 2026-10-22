@@ -3,7 +3,8 @@
 Security remediation management platform: turns vulnerabilities found on infrastructure assets into
 contextualized, prioritized, assigned, remediated, validated and auditable work.
 
-> Status: platform foundation only. No business features yet.
+> Status: local use only. Implemented: accounts and session sign-in, team-scoped access, the asset
+> inventory and platform administration. Findings and remediation workflows come next.
 
 ## Stack
 
@@ -19,18 +20,51 @@ Modular monolith. Free and open-source components only.
 
 ## Running locally
 
-Requirements: Docker (or Podman) with Compose.
+Requirements: Docker with Compose, or Podman with `podman-compose`. Every `docker compose` command in
+this README works the same with `podman-compose`.
 
 ```sh
 cp .env.example .env
 # Replace every "change-me" value, e.g. with:
 python3 -c "import secrets; print(secrets.token_urlsafe(64))"
-docker compose up --build
+docker compose up --build -d
 ```
 
 Open http://localhost:8080. Only the proxy publishes a port, bound to `127.0.0.1` by default.
-To reach PostgreSQL and Redis from the host during development, add the override:
-`docker compose -f compose.yaml -f compose.dev.yaml up`.
+
+- Use the host name in `NGINX_SERVER_NAME` (default `localhost`). The proxy drops requests for any
+  other name, so http://127.0.0.1:8080 shows nothing.
+- To reach PostgreSQL and Redis from the host during development, add the override:
+  `docker compose -f compose.yaml -f compose.dev.yaml up`.
+
+### Updating, stopping and data
+
+```sh
+git pull
+docker compose up --build -d     # rebuild the images; the migrate service applies new migrations first
+docker compose logs migrate      # check which migrations ran
+docker compose logs -f backend   # follow one service
+docker compose down              # stop and remove the containers; database and Redis volumes stay
+```
+
+- With `podman-compose`, run `down` and then `up -d` after a rebuild so every container uses the new
+  images.
+- `down -v` deletes the volumes: every account, team, asset and audit event is lost. Do not use it
+  unless that is what you want.
+
+### First sign-in
+
+1. Start the stack as above.
+2. Create your account. The command prints a one-time link:
+   `docker compose exec backend python manage.py accounts_create_user alice --first-name Alice`
+3. Open the link in the browser and choose a password.
+4. Make the account a platform Admin:
+   `docker compose exec backend python manage.py rbac_grant_admin alice`
+5. Log in at http://localhost:8080/login. "Administration" appears in the header.
+
+**Forgot your password?** Print a new one-time link and open it:
+`docker compose exec backend python manage.py accounts_password_link alice`. Setting the new password
+ends every other session of that account.
 
 ## Accounts
 
@@ -83,6 +117,14 @@ docker compose exec backend python manage.py rbac_revoke_admin bob
 - Admins read every team's assets but change them only through ordinary team roles.
 - Administrative changes are limited per user (`DJANGO_THROTTLE_ADMIN_WRITE_RATE`, default `60/min`).
   Password confirmations share the password-change budget (`DJANGO_THROTTLE_PASSWORD_CHANGE_RATE`).
+- Password links created in the web UI (new user, enable, "Issue password link") are shown once.
+  Copy the link before you choose Done; it is not stored anywhere.
+- A new team starts inactive. Open it under Administration > Teams, choose "Review activation", check
+  the counts and type the team code to activate it.
+- Positions (Analyst, Engineer) are set on the user's page. They grant no access by themselves: team
+  roles do.
+- The audit trail search matches filters exactly (action, actor ID, resource type and ID, outcome,
+  source). Without dates it shows the last 30 days; one search covers at most 366 days.
 
 **Recovery** when no Admin can sign in (lost password or disabled account): issue a link with
 `accounts_password_link <admin>`, or `accounts_enable_user <admin>` followed by `rbac_grant_admin <admin>`.
@@ -148,9 +190,13 @@ docker compose exec backend python manage.py rbac_assign_role soc alice asset-ma
 Backend (requires [uv](https://docs.astral.sh/uv/) and a PostgreSQL instance for tests):
 
 ```sh
+# A throwaway PostgreSQL 18 for the tests, separate from the Compose database.
+podman run -d --name trilha-test-pg -p 127.0.0.1:55432:5432 \
+  -e POSTGRES_DB=trilha -e POSTGRES_USER=trilha -e POSTGRES_PASSWORD=trilha-test \
+  docker.io/library/postgres:18-trixie
 cd backend
 uv sync
-uv run pytest            # POSTGRES_HOST / POSTGRES_PORT point to the test database
+POSTGRES_PORT=55432 uv run pytest   # POSTGRES_HOST / POSTGRES_PORT point to the test database
 uv run ruff check . && uv run ruff format --check .
 ```
 
