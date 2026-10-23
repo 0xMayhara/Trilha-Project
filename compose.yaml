@@ -12,19 +12,24 @@ x-backend-environment: &backend-environment
   DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:?set DJANGO_ALLOWED_HOSTS in .env}
   DJANGO_LOG_LEVEL: ${DJANGO_LOG_LEVEL:-INFO}
   POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
-  POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
-  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
   POSTGRES_HOST: db
   POSTGRES_SSLMODE: disable
   REDIS_HOST: redis
   REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
   TRILHA_BASE_URL: ${TRILHA_BASE_URL:-http://localhost:8080}
 
+# Database credentials differ per service (SPEC-0013): migrate runs as the schema owner; backend and
+# worker run as the restricted runtime role and never receive the owner or superuser password.
+x-runtime-environment: &runtime-environment
+  <<: *backend-environment
+  POSTGRES_USER: ${POSTGRES_RUNTIME_USER:?set POSTGRES_RUNTIME_USER in .env}
+  POSTGRES_PASSWORD: ${POSTGRES_RUNTIME_PASSWORD:?set POSTGRES_RUNTIME_PASSWORD in .env}
+
 x-backend: &backend
   <<: *hardening
   build: ./backend
   image: trilha-backend:local
-  environment: *backend-environment
+  environment: *runtime-environment
   read_only: true
   tmpfs: [/tmp]
 
@@ -67,7 +72,13 @@ services:
 
   migrate:
     <<: *backend
-    command: ["python", "manage.py", "migrate", "--noinput"]
+    environment:
+      <<: *backend-environment
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_RUNTIME_USER: ${POSTGRES_RUNTIME_USER:?set POSTGRES_RUNTIME_USER in .env}
+    # Migrations as the owner, then the runtime role's grants; backend and worker wait for it.
+    command: ["python", "manage.py", "db_migrate"]
     restart: "no"
     depends_on:
       db: {condition: service_healthy}
@@ -103,9 +114,12 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set POSTGRES_SUPERUSER_PASSWORD in .env}
       POSTGRES_DB: postgres
+      # Read by the provisioning script (first start, or `exec` on an existing volume).
       APP_DB_NAME: ${POSTGRES_DB}
-      APP_DB_USER: ${POSTGRES_USER}
-      APP_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      APP_DB_OWNER: ${POSTGRES_USER}
+      APP_DB_OWNER_PASSWORD: ${POSTGRES_PASSWORD}
+      APP_DB_RUNTIME: ${POSTGRES_RUNTIME_USER}
+      APP_DB_RUNTIME_PASSWORD: ${POSTGRES_RUNTIME_PASSWORD}
     volumes:
       - db-data:/var/lib/postgresql
       - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro,z
