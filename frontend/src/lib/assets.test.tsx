@@ -1,7 +1,10 @@
+import { readFileSync } from "node:fs";
+
 import { QueryClient } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { AssetForm } from "@/components/asset-form";
 import { AssetFacts, AssetTable } from "@/components/asset-table";
 import { accessQueryKey } from "@/lib/access";
 import { ApiError } from "@/lib/api-client";
@@ -20,8 +23,11 @@ import {
   fetchAssets,
   fieldErrors,
   handleAssetError,
+  osCatalogPageSchema,
+  osSummary,
   readAssetForm,
   teamsWith,
+  type Asset,
   type AssetFilters,
 } from "@/lib/assets";
 import { SESSION_QUERY_KEY } from "@/lib/auth";
@@ -36,6 +42,9 @@ const asset = {
   hostname: "web-01.example.com",
   ip_addresses: ["10.0.0.5"],
   operating_system: "Debian",
+  os_product: null,
+  os_version: "",
+  os_label: null,
   environment: "production",
   criticality: null,
   status: "active",
@@ -152,7 +161,8 @@ describe("asset client contracts", () => {
       kind: "server",
       hostname: "web.example.com",
       ip_addresses: ["10.0.0.5", "10.0.0.6", "2001:db8::1"],
-      operating_system: "",
+      os_product: null,
+      os_version: "",
       environment: null,
       criticality: null,
     });
@@ -161,5 +171,116 @@ describe("asset client contracts", () => {
     expect(assetErrorMessage(conflict)).toContain("Reload");
     expect(assetErrorMessage(new ApiError(500, "server_error", "Internal server error."))).toBe("Something went wrong. Try again.");
     expect(assetErrorMessage(new ApiError(403, "permission_denied", "internal detail"))).not.toContain("internal");
+  });
+});
+
+const debian = { code: "debian", label: "Debian", family: "linux", family_label: "Linux" };
+const catalog = [
+  debian,
+  { code: "fixture_os", label: "Fixture OS", family: "linux", family_label: "Linux" },
+  { code: "windows_11", label: "Windows 11", family: "windows", family_label: "Microsoft Windows" },
+];
+const loaded = { data: catalog, isError: false, refetch: () => undefined };
+const classified = assetSchema.parse({ ...asset, os_product: "debian", os_version: "12", os_label: "Debian" });
+
+function form(state: Parameters<typeof AssetForm>[0]["catalog"], current?: Asset) {
+  return renderToStaticMarkup(
+    <AssetForm asset={current} catalog={state} errors={{}} pending={false} submitLabel="Save" onSubmit={() => undefined} />,
+  );
+}
+
+describe("operating-system catalog (SPEC-0011)", () => {
+  it("test_os_catalog_schema_rejects_malformed_or_partial_catalog_cwe_754", () => {
+    const page = { count: 3, next: null, previous: null, results: catalog };
+    expect(osCatalogPageSchema.parse(page).results).toEqual(catalog);
+    for (const bad of [
+      { ...page, next: "/api/v1/assets/os-catalog/?page=2" },
+      { ...page, results: [{ ...debian, code: "Debian" }] },
+      { ...page, results: [{ ...debian, label: "" }] },
+      { ...page, results: [{ code: "debian", label: "Debian" }] },
+    ]) {
+      expect(osCatalogPageSchema.safeParse(bad).success).toBe(false);
+    }
+  });
+
+  it("test_asset_form_requires_loaded_catalog_cwe_754", () => {
+    const pending = form({ isError: false, refetch: () => undefined }, classified);
+    expect(pending).toContain('role="status"');
+    expect(pending).not.toContain("<form");
+    const failed = form({ isError: true, refetch: () => undefined }, classified);
+    expect(failed).toContain('role="alert"');
+    expect(failed).toContain("Retry");
+    expect(failed).not.toContain("<form");
+  });
+
+  it("test_asset_form_lists_catalog_labels_grouped_by_family", () => {
+    const html = form(loaded);
+    expect(html).toContain('<optgroup label="Linux"><option value="debian">Debian</option><option value="fixture_os">Fixture OS</option></optgroup>');
+    expect(html).toContain('<optgroup label="Microsoft Windows"><option value="windows_11">Windows 11</option></optgroup>');
+    expect(html).toContain('<option value="" selected="">Unspecified</option>');
+    expect(html).toContain('name="os_version"');
+    expect(html).not.toContain("operating_system");
+    // Labels come from the backend: no catalog copy exists in the frontend sources.
+    const sources = ["./assets.ts", "../components/asset-form.tsx", "../components/asset-table.tsx"]
+      .map((path) => readFileSync(new URL(path, import.meta.url), "utf8"))
+      .join("\n");
+    for (const label of ["Ubuntu", "Windows Server", "Red Hat", "macOS", "CentOS"]) {
+      expect(sources).not.toContain(label);
+    }
+  });
+
+  it("test_asset_form_shows_saved_os_and_legacy_text", () => {
+    const html = form(loaded, classified);
+    expect(html).toContain('<option value="debian" selected="">Debian</option>');
+    expect(html).toMatch(/name="os_version"[^>]*value="12"/);
+    expect(html).toContain("Legacy OS text: &quot;Debian&quot; (kept as recorded)");
+    expect(html).toMatch(/<select[^>]*name="os_product"[^>]*aria-describedby="os-legacy"/);
+    expect(form(loaded, assetSchema.parse(asset))).toContain('<option value="" selected="">Not classified</option>');
+  });
+
+  it("test_form_preserves_unrecognized_current_code_cwe_754", () => {
+    const newer = assetSchema.parse({ ...classified, os_product: "vmware_esxi", os_label: "VMware ESXi" });
+    expect(form(loaded, newer)).toContain('<option value="vmware_esxi" selected="">vmware_esxi (unrecognized)</option>');
+  });
+
+  it("test_read_asset_form_maps_os_fields", () => {
+    const data = new FormData();
+    data.set("os_product", "debian");
+    data.set("os_version", " 12 ");
+    expect(readAssetForm(data)).toMatchObject({ os_product: "debian", os_version: " 12 " });
+    data.set("os_product", "");
+    const input = readAssetForm(data);
+    expect(input.os_product).toBeNull();
+    expect(input).not.toHaveProperty("operating_system");
+  });
+
+  it("test_os_summary_distinguishes_os_states", () => {
+    const base = { os_product: null, os_version: "", os_label: null, operating_system: "" };
+    expect(osSummary(base)).toBe("Unspecified");
+    expect(osSummary({ ...base, operating_system: "CentOS 7" })).toBe("Not classified");
+    expect(osSummary({ ...base, os_product: "centos", os_label: "CentOS", os_version: "7" })).toBe("CentOS 7");
+    expect(osSummary({ ...base, os_product: "centos", os_label: "CentOS" })).toBe("CentOS");
+    expect(osSummary({ ...base, os_product: "vmware_esxi" })).toBe("vmware_esxi");
+  });
+
+  it("test_os_text_renders_as_text_cwe_79", () => {
+    const hostile = assetSchema.parse({
+      ...asset,
+      operating_system: '<img src=x onerror="alert(1)">',
+      os_product: "debian",
+      os_label: "<script>alert(1)</script>",
+    });
+    const hostileCatalog = { ...loaded, data: [{ ...debian, label: "<b>Debian</b>", family_label: "<i>Linux</i>" }] };
+    for (const markup of [
+      renderToStaticMarkup(<AssetTable assets={[hostile]} />),
+      renderToStaticMarkup(<AssetFacts asset={hostile} />),
+      form(hostileCatalog, hostile),
+    ]) {
+      expect(markup).not.toContain("<img");
+      expect(markup).not.toContain("<script");
+      expect(markup).not.toContain("<b>");
+    }
+    expect(renderToStaticMarkup(<AssetFacts asset={hostile} />)).toContain("&lt;img");
+    expect(form(hostileCatalog, hostile)).toContain("&lt;b&gt;Debian&lt;/b&gt;");
   });
 });

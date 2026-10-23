@@ -13,6 +13,7 @@ import {
   fetchAccessTeams,
   fieldErrors,
   handleAssetError,
+  osCatalogQuery,
   teamsWith,
   type AssetInput,
 } from "@/lib/assets";
@@ -27,6 +28,7 @@ export function AssetRegistration() {
     queryFn: ({ signal }) => fetchAccessTeams(signal),
     enabled: Boolean(user),
   });
+  const catalog = useQuery({ ...osCatalogQuery, enabled: Boolean(user) });
   const create = useMutation({
     mutationFn: ({ input, teamId }: { input: AssetInput; teamId: string }) => createAsset(teamId, input),
     onSuccess: async (asset) => {
@@ -36,8 +38,8 @@ export function AssetRegistration() {
     onError: (error) => handleAssetError(client, error),
   });
   useEffect(() => {
-    if (access.error) void handleAssetError(client, access.error);
-  }, [access.error, client]);
+    for (const error of [access.error, catalog.error]) if (error) void handleAssetError(client, error);
+  }, [access.error, catalog.error, client]);
 
   if (!user) return null;
   if (access.isPending) return <p role="status">Loading your teams...</p>;
@@ -53,6 +55,7 @@ export function AssetRegistration() {
       )}
       <AssetForm
         teams={teams}
+        catalog={catalog}
         errors={fieldErrors(create.error)}
         pending={create.isPending}
         submitLabel="Register asset"
