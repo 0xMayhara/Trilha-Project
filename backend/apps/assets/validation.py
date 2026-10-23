@@ -9,6 +9,9 @@ from django.core.exceptions import ValidationError
 HOSTNAME_MAX_LENGTH = 253
 HOSTNAME_PATTERN = r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$"
 MAX_IP_ADDRESSES = 16
+# ASCII only (SPEC-0011 D-4); starts and ends alphanumeric. Ranges here never match non-ASCII.
+OS_VERSION_MAX_LENGTH = 32
+OS_VERSION_PATTERN = r"^[A-Za-z0-9]([A-Za-z0-9 ._+-]{0,30}[A-Za-z0-9])?$"
 _IP_TEXT_MAX_LENGTH = 45
 _LIMITED_BROADCAST = ipaddress.IPv4Address("255.255.255.255")
 
@@ -29,6 +32,19 @@ def canonical_hostname(value):
     except ValueError:
         return value
     raise ValidationError("IP addresses belong in ip_addresses, not hostname.")
+
+
+def canonical_os_version(value):
+    """Empty, or a short ASCII version such as "24.04" or "22H2" (SPEC-0011 SEC-06)."""
+    if not isinstance(value, str):
+        raise ValidationError("Expected text.")
+    value = value.strip()
+    if value and not re.fullmatch(OS_VERSION_PATTERN, value):
+        raise ValidationError(
+            "Use 1 to 32 ASCII letters, digits, spaces, dots, hyphens, underscores or plus signs, "
+            "starting and ending with a letter or digit."
+        )
+    return value
 
 
 def canonical_ip(value):
