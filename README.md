@@ -354,9 +354,11 @@ pnpm dev                 # pnpm lint | pnpm typecheck | pnpm test | pnpm build
 - Production settings refuse to start with missing or placeholder secrets.
 - Containers run as non-root, without capabilities, with read-only filesystems where possible.
 - CI runs tests, CodeQL, dependency audits, secret scanning, workflow linting and image scanning.
+- The application connects to PostgreSQL as a restricted runtime role that owns nothing; migrations
+  run as a separate schema owner (see [Database roles, backups and recovery](#database-roles-backups-and-recovery)).
 
-Only local use is supported so far. Running Trilha on a network needs TLS for every connection to
-the proxy and separate database owner and runtime roles. Both are planned and not provided yet.
+Only local use is supported so far. Running Trilha on a network still needs TLS for every connection
+to the proxy, which is planned and not provided yet.
 
 ## Reporting vulnerabilities
 
