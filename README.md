@@ -317,6 +317,10 @@ docker compose exec backend python manage.py rbac_assign_role soc alice asset-ma
 - An asset name is unique among the team's active assets (case-insensitive). Hostnames and IP
   addresses are attributes, not identities, and may repeat.
 - Asset changes are limited per user (`DJANGO_THROTTLE_ASSET_WRITE_RATE`, default `60/min`).
+- Security posture is declared by the team and edited like any other attribute: criticality,
+  environment, hardening (hardened, partially hardened, not hardened) and internet exposure
+  (exposed, not exposed). An empty value means *not assessed* (criticality, hardening) or *unknown*
+  (exposure). It is never read as a negative answer, and Trilha does not verify declared values.
 
 ## Development
 
