@@ -34,6 +34,19 @@ class CheckFileTests(unittest.TestCase):
         text = "value = ast.literal_eval(raw)\nscore = evaluate(item)\nexecutor = make()\n"
         self.assertEqual(patterns.check_file("backend/apps/core/views.py", text), [])
 
+    def test_operational_scripts_never_delete_volumes(self):
+        for line in (
+            "podman-compose down -v",
+            "docker compose down --volumes",
+            "podman volume rm trilha_db-data",
+            "docker volume prune -f",
+            "psql -c 'DROP DATABASE trilha'",
+        ):
+            with self.subTest(line=line):
+                self.assert_rejected("deploy/postgres/backup.sh", line, "SEC-18")
+        safe = "compose down\nDROP ROLE trilha_app;\n"
+        self.assertEqual(patterns.check_file("deploy/postgres/rollback-runtime-role.sh", safe), [])
+
     def test_backend_rules_do_not_apply_outside_backend(self):
         self.assertEqual(patterns.check_file("frontend/src/lib/x.ts", "eval(payload)\n"), [])
 
