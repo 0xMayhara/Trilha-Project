@@ -11,6 +11,9 @@ export const ASSET_KINDS = ["server", "workstation", "network_device", "cloud_re
 export const ENVIRONMENTS = ["production", "staging", "development", "testing", "other"] as const;
 export const CRITICALITIES = ["low", "medium", "high", "critical"] as const;
 export const STATUSES = ["active", "retired"] as const;
+/** Declared posture (SPEC-0007 BR-25). There is no "not assessed" or "unknown" code: that is null. */
+export const HARDENING_STATUSES = ["hardened", "partially_hardened", "not_hardened"] as const;
+export const INTERNET_EXPOSURES = ["exposed", "not_exposed"] as const;
 
 export const KIND_LABELS: Record<(typeof ASSET_KINDS)[number], string> = {
   server: "Server",
@@ -32,6 +35,15 @@ export const CRITICALITY_LABELS: Record<(typeof CRITICALITIES)[number], string> 
   high: "High",
   critical: "Critical",
 };
+export const HARDENING_LABELS: Record<(typeof HARDENING_STATUSES)[number], string> = {
+  hardened: "Hardened",
+  partially_hardened: "Partially hardened",
+  not_hardened: "Not hardened",
+};
+export const EXPOSURE_LABELS: Record<(typeof INTERNET_EXPOSURES)[number], string> = {
+  exposed: "Exposed",
+  not_exposed: "Not exposed",
+};
 
 const teamSchema = z.object({ id: z.uuid(), code: z.string(), name: z.string() });
 export const assetSchema = z.object({
@@ -47,6 +59,8 @@ export const assetSchema = z.object({
   os_label: z.string().nullable(),
   environment: z.enum(ENVIRONMENTS).nullable(),
   criticality: z.enum(CRITICALITIES).nullable(),
+  hardening_status: z.enum(HARDENING_STATUSES).nullable(),
+  internet_exposure: z.enum(INTERNET_EXPOSURES).nullable(),
   status: z.enum(STATUSES),
   version: z.number().int().positive(),
   created_at: z.string(),
@@ -89,6 +103,16 @@ export const osCatalogQuery = queryOptions({
     (await apiFetch("/api/v1/assets/os-catalog/?page_size=100", osCatalogPageSchema, { signal })).results,
   staleTime: Infinity,
 });
+
+/** Null means the team has not assessed it: never shown as "Not hardened" (SPEC-0007 BR-25). */
+export function hardeningSummary(value: Asset["hardening_status"]): string {
+  return value ? HARDENING_LABELS[value] : "Not assessed";
+}
+
+/** Null means unknown: never shown as "Not exposed" (SPEC-0007 BR-25). */
+export function exposureSummary(value: Asset["internet_exposure"]): string {
+  return value ? EXPOSURE_LABELS[value] : "Unknown";
+}
 
 /** OS text for tables and details. Reads only the asset, never the catalog (SPEC-0011 NFR-03). */
 export function osSummary(asset: Pick<Asset, "os_product" | "os_version" | "os_label" | "operating_system">) {
@@ -148,6 +172,8 @@ export type AssetInput = {
   os_version: string;
   environment: string | null;
   criticality: string | null;
+  hardening_status: string | null;
+  internet_exposure: string | null;
 };
 
 export function createAsset(teamId: string, input: AssetInput) {
@@ -200,6 +226,9 @@ export function readAssetForm(form: FormData): AssetInput {
     os_version: text("os_version"),
     environment: text("environment") || null,
     criticality: text("criticality") || null,
+    // The first option ("Not assessed" / "Unknown") submits "", which is null, never a negative value.
+    hardening_status: text("hardening_status") || null,
+    internet_exposure: text("internet_exposure") || null,
   };
 }
 

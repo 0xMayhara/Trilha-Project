@@ -19,6 +19,8 @@ import {
   assetPath,
   assetSchema,
   can,
+  exposureSummary,
+  hardeningSummary,
   clearAssetQueries,
   fetchAssets,
   fieldErrors,
@@ -47,6 +49,8 @@ const asset = {
   os_label: null,
   environment: "production",
   criticality: null,
+  hardening_status: null,
+  internet_exposure: null,
   status: "active",
   version: 1,
   created_at: "2026-10-22T10:00:00Z",
@@ -165,6 +169,8 @@ describe("asset client contracts", () => {
       os_version: "",
       environment: null,
       criticality: null,
+      hardening_status: null,
+      internet_exposure: null,
     });
     const conflict = new ApiError(409, "conflict", "An active asset with this name already exists in the team.");
     expect(assetErrorMessage(conflict)).toContain("already exists");
@@ -282,5 +288,73 @@ describe("operating-system catalog (SPEC-0011)", () => {
     }
     expect(renderToStaticMarkup(<AssetFacts asset={hostile} />)).toContain("&lt;img");
     expect(form(hostileCatalog, hostile)).toContain("&lt;b&gt;Debian&lt;/b&gt;");
+  });
+});
+
+describe("asset security posture (SPEC-0007 slice A)", () => {
+  it("test_posture_schema_accepts_codes_and_null_only", () => {
+    for (const ok of [
+      { hardening_status: "hardened", internet_exposure: "exposed" },
+      { hardening_status: "partially_hardened", internet_exposure: "not_exposed" },
+      { hardening_status: "not_hardened", internet_exposure: null },
+      { hardening_status: null, internet_exposure: null },
+    ]) {
+      expect(assetSchema.parse({ ...asset, ...ok })).toMatchObject(ok);
+    }
+    for (const bad of [
+      { hardening_status: "not_assessed" },
+      { hardening_status: "unknown" },
+      { hardening_status: "" },
+      { hardening_status: "Hardened" },
+      { internet_exposure: "unknown" },
+      { internet_exposure: "no" },
+      { internet_exposure: false },
+    ]) {
+      expect(() => assetSchema.parse({ ...asset, ...bad })).toThrow();
+    }
+    const missing: Record<string, unknown> = { ...asset };
+    delete missing.hardening_status;
+    expect(() => assetSchema.parse(missing)).toThrow();
+  });
+
+  it("test_read_asset_form_maps_not_assessed_and_unknown_to_null", () => {
+    const data = new FormData();
+    data.set("hardening_status", "");
+    data.set("internet_exposure", "");
+    expect(readAssetForm(data)).toMatchObject({ hardening_status: null, internet_exposure: null });
+    data.set("hardening_status", "not_hardened");
+    data.set("internet_exposure", "not_exposed");
+    expect(readAssetForm(data)).toMatchObject({ hardening_status: "not_hardened", internet_exposure: "not_exposed" });
+  });
+
+  it("test_not_assessed_and_unknown_render_distinct_from_negatives", () => {
+    expect(hardeningSummary(null)).toBe("Not assessed");
+    expect(hardeningSummary("not_hardened")).toBe("Not hardened");
+    expect(exposureSummary(null)).toBe("Unknown");
+    expect(exposureSummary("not_exposed")).toBe("Not exposed");
+    const unassessed = assetSchema.parse(asset);
+    const declared = assetSchema.parse({ ...asset, hardening_status: "not_hardened", internet_exposure: "not_exposed" });
+    const facts = renderToStaticMarkup(<AssetFacts asset={unassessed} />);
+    expect(facts).toContain("Hardening (declared)");
+    expect(facts).toContain("Not assessed");
+    expect(facts).toContain("Internet exposure (declared)");
+    expect(facts).toContain("Unknown");
+    expect(facts).not.toContain("Not hardened");
+    expect(facts).not.toContain("Not exposed");
+    const table = renderToStaticMarkup(<AssetTable assets={[unassessed, declared]} />);
+    for (const text of ["Hardening", "Internet exposure", "Not assessed", "Unknown", "Not hardened", "Not exposed"]) {
+      expect(table).toContain(text);
+    }
+  });
+
+  it("test_asset_form_offers_posture_with_unassessed_defaults", () => {
+    const blank = form(loaded);
+    expect(blank).toContain('name="hardening_status"');
+    expect(blank).toContain('name="internet_exposure"');
+    expect(blank).toContain('<option value="" selected="">Not assessed</option>');
+    expect(blank).toContain('<option value="" selected="">Unknown</option>');
+    const saved = form(loaded, assetSchema.parse({ ...asset, hardening_status: "partially_hardened", internet_exposure: "exposed" }));
+    expect(saved).toContain('<option value="partially_hardened" selected="">Partially hardened</option>');
+    expect(saved).toContain('<option value="exposed" selected="">Exposed</option>');
   });
 });

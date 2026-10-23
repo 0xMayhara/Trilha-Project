@@ -8,6 +8,10 @@ import {
   CRITICALITY_LABELS,
   ENVIRONMENT_LABELS,
   ENVIRONMENTS,
+  EXPOSURE_LABELS,
+  HARDENING_LABELS,
+  HARDENING_STATUSES,
+  INTERNET_EXPOSURES,
   KIND_LABELS,
   readAssetForm,
   type Asset,
@@ -165,6 +169,36 @@ export function AssetForm({
           {CRITICALITIES.map((criticality) => (
             <option key={criticality} value={criticality}>
               {CRITICALITY_LABELS[criticality]}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Hardening (declared)" name="hardening_status" errors={errors}>
+        <select
+          name="hardening_status"
+          defaultValue={asset?.hardening_status ?? ""}
+          className={INPUT}
+          aria-describedby={described("hardening_status")}
+        >
+          <option value="">Not assessed</option>
+          {HARDENING_STATUSES.map((status) => (
+            <option key={status} value={status}>
+              {HARDENING_LABELS[status]}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Internet exposure (declared)" name="internet_exposure" errors={errors}>
+        <select
+          name="internet_exposure"
+          defaultValue={asset?.internet_exposure ?? ""}
+          className={INPUT}
+          aria-describedby={described("internet_exposure")}
+        >
+          <option value="">Unknown</option>
+          {INTERNET_EXPOSURES.map((exposure) => (
+            <option key={exposure} value={exposure}>
+              {EXPOSURE_LABELS[exposure]}
             </option>
           ))}
         </select>
