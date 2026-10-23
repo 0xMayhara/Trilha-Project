@@ -15,6 +15,12 @@ SELF = Path(__file__).resolve().relative_to(REPO_ROOT).as_posix()
 
 # (path prefix, file suffixes, pattern, reason)
 RULES = [
+    (
+        "deploy/",
+        (".sh",),
+        r"\bdown\s+(-v|--volumes)\b|\bvolume\s+(rm|prune)\b|\bDROP\s+DATABASE\b",
+        "operational scripts must never delete volumes or the database (SPEC-0013 SEC-18)",
+    ),
     ("backend/", (".py",), r"\bcsrf_exempt\b", "csrf_exempt is forbidden (CWE-352)"),
     ("backend/", (".py",), r"verify\s*=\s*False", "TLS verification must stay on (CWE-295)"),
     ("backend/", (".py",), r"shell\s*=\s*True", "shell=True is forbidden (CWE-78)"),

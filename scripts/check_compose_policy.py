@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Enforce container hardening rules (SPEC-0001 SEC-16, SEC-17).
+"""Enforce container hardening rules (SPEC-0001 SEC-16, SEC-17) and the database credential split
+(SPEC-0013 SEC-12).
 
 Usage:
     docker compose --env-file .env.example config --format json \
@@ -66,6 +67,35 @@ def check_services(config: dict, dev: bool) -> list[str]:
     return errors
 
 
+def check_database_credentials(services: dict) -> list[str]:
+    """migrate connects as the schema owner; backend and worker as the runtime role. No service gets
+    another role's password, and the three PostgreSQL credentials are distinct (SPEC-0013 SEC-12)."""
+    db = (services.get("db") or {}).get("environment") or {}
+    roles = {"owner": db.get("APP_DB_OWNER"), "runtime": db.get("APP_DB_RUNTIME")}
+    secrets = {
+        "superuser": db.get("POSTGRES_PASSWORD"),
+        "owner": db.get("APP_DB_OWNER_PASSWORD"),
+        "runtime": db.get("APP_DB_RUNTIME_PASSWORD"),
+    }
+    if not all(roles.values()) or not all(secrets.values()):
+        return ["db: provisioning roles and passwords must be configured"]
+    errors = []
+    if roles["owner"] == roles["runtime"]:
+        errors.append("db: the owner and runtime roles must differ")
+    if len(set(secrets.values())) != len(secrets):
+        errors.append("db: the superuser, owner and runtime passwords must differ")
+    for name, kind in (("migrate", "owner"), ("backend", "runtime"), ("worker", "runtime")):
+        environment = (services.get(name) or {}).get("environment") or {}
+        if environment.get("POSTGRES_USER") != roles[kind]:
+            errors.append(f"{name}: must connect as the {kind} role")
+        if environment.get("POSTGRES_PASSWORD") != secrets[kind]:
+            errors.append(f"{name}: must use the {kind} password")
+        for other, secret in secrets.items():
+            if other != kind and secret in environment.values():
+                errors.append(f"{name}: must not receive the {other} password")
+    return errors
+
+
 def check_dockerfile(name: str, text: str) -> list[str]:
     errors: list[str] = []
     stages: set[str] = set()
@@ -110,7 +140,10 @@ def main() -> int:
     parser.add_argument("--dev", action="store_true", help="allow loopback ports from the override")
     args = parser.parse_args()
 
-    errors = check_services(json.load(sys.stdin), args.dev)
+    config = json.load(sys.stdin)
+    errors = check_services(config, args.dev)
+    if config.get("services"):
+        errors += check_database_credentials(config["services"])
     errors += check_dockerfiles(tracked_dockerfiles())
     for error in errors:
         print(f"policy violation: {error}", file=sys.stderr)

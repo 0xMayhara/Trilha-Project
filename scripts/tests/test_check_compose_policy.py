@@ -136,3 +136,63 @@ class CheckDockerfileTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def credential_services(**overrides):
+    db = {
+        "APP_DB_OWNER": "trilha",
+        "APP_DB_RUNTIME": "trilha_app",
+        "POSTGRES_PASSWORD": "superuser-secret",
+        "APP_DB_OWNER_PASSWORD": "owner-secret",
+        "APP_DB_RUNTIME_PASSWORD": "runtime-secret",
+    }
+    runtime = {"POSTGRES_USER": "trilha_app", "POSTGRES_PASSWORD": "runtime-secret"}
+    services = {
+        "db": {"environment": db},
+        "migrate": {"environment": {"POSTGRES_USER": "trilha", "POSTGRES_PASSWORD": "owner-secret"}},
+        "backend": {"environment": dict(runtime)},
+        "worker": {"environment": dict(runtime)},
+    }
+    for name, environment in overrides.items():
+        services[name] = {"environment": environment}
+    return services
+
+
+class DatabaseCredentialTests(unittest.TestCase):
+    """SPEC-0013 SEC-12: the CI step runs this check on the repository's resolved compose.yaml."""
+
+    def test_backend_and_worker_never_receive_owner_credentials_cwe_522(self):
+        self.assertEqual(policy.check_database_credentials(credential_services()), [])
+        owner = {"POSTGRES_USER": "trilha", "POSTGRES_PASSWORD": "owner-secret"}
+        for service in ("backend", "worker"):
+            with self.subTest(service=service):
+                errors = policy.check_database_credentials(credential_services(**{service: owner}))
+                self.assertIn(f"{service}: must connect as the runtime role", errors)
+                self.assertIn(f"{service}: must not receive the owner password", errors)
+        leaked = {
+            "POSTGRES_USER": "trilha_app",
+            "POSTGRES_PASSWORD": "runtime-secret",
+            "EXTRA": "superuser-secret",
+        }
+        errors = policy.check_database_credentials(credential_services(backend=leaked))
+        self.assertEqual(errors, ["backend: must not receive the superuser password"])
+        migrate = {
+            "POSTGRES_USER": "trilha",
+            "POSTGRES_PASSWORD": "owner-secret",
+            "POSTGRES_RUNTIME_PASSWORD": "runtime-secret",
+        }
+        errors = policy.check_database_credentials(credential_services(migrate=migrate))
+        self.assertEqual(errors, ["migrate: must not receive the runtime password"])
+
+    def test_roles_and_passwords_must_be_distinct_and_present(self):
+        services = credential_services()
+        services["db"]["environment"].update(
+            APP_DB_RUNTIME="trilha", APP_DB_RUNTIME_PASSWORD="owner-secret"
+        )
+        errors = policy.check_database_credentials(services)
+        self.assertIn("db: the owner and runtime roles must differ", errors)
+        self.assertIn("db: the superuser, owner and runtime passwords must differ", errors)
+        self.assertEqual(
+            policy.check_database_credentials({"db": {"environment": {}}}),
+            ["db: provisioning roles and passwords must be configured"],
+        )

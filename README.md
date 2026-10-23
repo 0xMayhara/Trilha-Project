@@ -25,8 +25,10 @@ this README works the same with `podman-compose`.
 
 ```sh
 cp .env.example .env
-# Replace every "change-me" value, e.g. with:
+# Replace every "change-me" value (all passwords must differ), e.g. with:
 python3 -c "import secrets; print(secrets.token_urlsafe(64))"
+# Recommended: pin the Compose project so every command targets the same volumes.
+echo "COMPOSE_PROJECT_NAME=trilha" >> .env
 docker compose up --build -d
 ```
 
@@ -51,6 +53,137 @@ docker compose down              # stop and remove the containers; database and 
   images.
 - `down -v` deletes the volumes: every account, team, asset and audit event is lost. Do not use it
   unless that is what you want.
+
+## Database roles, backups and recovery
+
+PostgreSQL uses three roles (SPEC-0013):
+
+| Role | Used by | Can |
+|---|---|---|
+| `postgres` (superuser) | the `db` container only: provisioning, backups | everything |
+| `POSTGRES_USER` (schema owner, `trilha`) | the `migrate` service only | own the schema, run migrations, grant the runtime role |
+| `POSTGRES_RUNTIME_USER` (`trilha_app`) | `backend`, `worker`, management commands | read and write application rows; insert and read audit events. No DDL, no `TRUNCATE`, no changes to audit events, no other databases |
+
+- The `migrate` service runs `manage.py db_migrate`: migrations as the owner, then the runtime role's
+  grants from `backend/apps/core/db_privileges.py`.
+- **Every table must be classified there.** A migration that adds a table without classifying it
+  makes `migrate` fail, and the stack does not start.
+- `backend` and `worker` report unhealthy if they connect with any privileged role.
+
+**What this does not do:**
+
+- The schema owner and the superuser can still change history.
+- The runtime role can insert events; it cannot change or delete them.
+- Nothing here makes the audit trail tamper-proof.
+
+### Upgrading an installation created before role separation (one-time)
+
+**1. Identify the deployment.** Nothing is guessed from the current directory: the project name
+selects the volumes.
+
+```sh
+podman ps --filter label=com.docker.compose.service=db --format '{{.Names}} {{.Labels}}'
+# Note the com.docker.compose.project value of the running db, for example trilha.
+```
+
+**2. Back up, then prove the backup restores**, with the stack still running:
+
+```sh
+deploy/postgres/backup.sh --project <project> ~/trilha-backups
+deploy/postgres/restore-verify.sh ~/trilha-backups/trilha-<UTC>.dump   # must end with RESULT: PASS
+```
+
+**3. Configure.** In `.env`:
+
+- set `COMPOSE_PROJECT_NAME=<project>`;
+- add `POSTGRES_RUNTIME_USER=trilha_app` and a new `POSTGRES_RUNTIME_PASSWORD`;
+- set a **new** `POSTGRES_PASSWORD`. The old one was visible to `backend` and `worker`.
+
+**4. Apply** (maintenance window, a few minutes). Volumes are kept, and `down -v` is never used:
+
+```sh
+git pull && docker compose build
+docker compose down
+docker compose up -d db
+docker compose exec -T db sh /docker-entrypoint-initdb.d/01-provision.sh   # roles, passwords, database grants
+docker compose up -d                                                          # db_migrate applies table grants
+```
+
+**5. Verify:**
+
+```sh
+docker compose ps                                              # every service healthy
+docker compose exec backend python manage.py check_ready       # "ready": restricted role in use
+docker compose logs migrate | grep db_grants                   # db_grants_applied or db_grants_unchanged
+```
+
+Then sign in, edit an asset and open the audit trail.
+
+Provisioning is idempotent and never changes an owner. If the database belongs to a different role,
+it stops without changing anything.
+
+### Rollback
+
+**Application rollback.** Check out the previous release and restore its `.env`. If you rotated the
+owner password, put the **new** value in `POSTGRES_PASSWORD`, because the previous release connects
+as the owner. Then run `docker compose down && docker compose up -d`. No data or owner changed during
+the upgrade, so nothing needs restoring.
+
+**Optional privilege rollback**, after the application rollback:
+
+```sh
+docker compose exec -T db sh -s < deploy/postgres/rollback-runtime-role.sh
+```
+
+It removes `trilha_app` and its privileges and changes no data.
+
+### Backups
+
+```sh
+deploy/postgres/backup.sh --project <project> <directory-outside-the-repository>
+```
+
+- **Output:** `trilha-<UTC>.dump` (`pg_dump` custom format), plus `.manifest` (owner, grants and row
+  count per table) and `.sha256`, all mode 0600.
+- **Sessions are not backed up:** after a restore, everyone signs in again.
+- **The file holds everything else**, including password hashes and the audit trail. Keep backups in
+  an owner-only directory on encrypted storage. Keep the last 7 daily backups, plus every pre-upgrade
+  backup until a newer verified one exists.
+- **Checksums:** `.sha256` detects corruption, **not tampering**. Anyone who can change the dump can
+  change it too. Record the checksum somewhere else, or sign it (`gpg --detach-sign`).
+- **Off the host:** copies should be encrypted first (`gpg --symmetric`), stored with access limited
+  to operators, and restore-tested periodically. Nothing uploads backups automatically.
+- **Daily example (cron):**
+  `15 3 * * * cd /srv/trilha && deploy/postgres/backup.sh --project trilha /srv/trilha-backups`
+
+### Verifying and restoring a backup
+
+- `deploy/postgres/restore-verify.sh <dump>` restores into a throwaway PostgreSQL container with no
+  network and no volume, then removes it. It checks the checksum, migration state, owners, grants,
+  row counts, the audit trigger and the runtime role's restrictions, and prints `PASS`/`FAIL` per
+  check.
+- **Into a new installation:**
+  1. Prepare `.env`, then `docker compose up -d db` only.
+  2. `docker compose exec -T db pg_restore -U postgres -d trilha --exit-on-error < trilha-<UTC>.dump`
+  3. `docker compose up -d`. `db_migrate` re-applies grants and any newer migrations.
+- **After data loss on an existing installation:**
+  1. Back up the damaged state first.
+  2. `docker compose down`, then `docker compose up -d db`.
+  3. As `postgres`, rename the damaged database rather than dropping it:
+     `ALTER DATABASE trilha RENAME TO trilha_damaged_<date>;`
+  4. Create an empty one, `CREATE DATABASE trilha OWNER trilha;`, and re-run provisioning.
+  5. `pg_restore` as above, then `docker compose up -d`.
+  6. Delete the renamed database only once you are satisfied.
+
+### Rotating database passwords
+
+Edit `.env`, then:
+
+```sh
+docker compose up -d db
+docker compose exec -T db sh /docker-entrypoint-initdb.d/01-provision.sh
+docker compose up -d
+```
 
 ### First sign-in
 
@@ -199,6 +332,12 @@ uv sync
 POSTGRES_PORT=55432 uv run pytest   # POSTGRES_HOST / POSTGRES_PORT point to the test database
 uv run ruff check . && uv run ruff format --check .
 ```
+
+- `tests/test_db_roles.py` also needs Podman or Docker. It starts disposable PostgreSQL containers to
+  prove role separation, upgrades, backups and restores, then removes them. It never touches a
+  Compose project.
+- A migration that creates a table must classify it in `backend/apps/core/db_privileges.py` in the
+  same commit; otherwise `db_migrate` refuses to grant and the stack does not start.
 
 Frontend (requires Node.js 24 and pnpm 12):
 

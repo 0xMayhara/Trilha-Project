@@ -1,11 +1,12 @@
 """Settings shared by every environment. Values come from environment variables (CLAUDE.md §7)."""
 
+import os
 from pathlib import Path
 from urllib.parse import quote
 
 from django.core.exceptions import ImproperlyConfigured
 
-from config.env import env_int, env_origin, env_str
+from config.env import env_bool, env_int, env_origin, env_str
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -61,6 +62,11 @@ DATABASES = {
         },
     }
 }
+
+# SPEC-0013: the role db_migrate grants to; backend and worker connect as it. Their readiness check
+# fails unless the connected role is restricted (off only in test settings).
+POSTGRES_RUNTIME_USER = os.environ.get("POSTGRES_RUNTIME_USER", "")
+DB_REQUIRE_RESTRICTED_ROLE = env_bool("DB_REQUIRE_RESTRICTED_ROLE", True)
 
 REDIS_HOST = env_str("REDIS_HOST")
 REDIS_PORT = env_int("REDIS_PORT", 6379)

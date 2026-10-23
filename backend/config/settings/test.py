@@ -11,6 +11,8 @@ os.environ.setdefault("POSTGRES_PASSWORD", "trilha-test")
 os.environ.setdefault("POSTGRES_HOST", "localhost")
 os.environ.setdefault("REDIS_HOST", "localhost")
 os.environ.setdefault("REDIS_PASSWORD", "unused-in-tests")
+# Tests connect as the superuser of a throwaway server; role tests enable the check explicitly.
+os.environ.setdefault("DB_REQUIRE_RESTRICTED_ROLE", "false")
 
 from config.settings.base import *
 
