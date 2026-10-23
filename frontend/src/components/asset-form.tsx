@@ -12,9 +12,12 @@ import {
   readAssetForm,
   type Asset,
   type AssetInput,
+  type OsCatalogEntry,
 } from "@/lib/assets";
 
 type Team = { id: string; code: string; name: string };
+/** The OS catalog query, as `useQuery` returns it. */
+type Catalog = { data?: OsCatalogEntry[]; isError: boolean; refetch: () => unknown };
 
 const INPUT = "rounded border border-neutral-300 px-3 py-2";
 
@@ -37,6 +40,7 @@ function Field({ label, name, errors, children }: { label: string; name: string;
 export function AssetForm({
   asset,
   teams,
+  catalog,
   errors,
   pending,
   submitLabel,
@@ -44,6 +48,7 @@ export function AssetForm({
 }: {
   asset?: Asset;
   teams?: Team[];
+  catalog: Catalog;
   errors: Record<string, string[]>;
   pending: boolean;
   submitLabel: string;
@@ -55,6 +60,25 @@ export function AssetForm({
     onSubmit(readAssetForm(form), String(form.get("team_id") ?? ""));
   }
   const described = (name: string) => (errors[name] ? `${name}-error` : undefined);
+
+  // Without the catalog the OS select would submit "Unspecified" and erase a saved choice (SEC-14).
+  if (!catalog.data) {
+    return catalog.isError ? (
+      <div role="alert" className="space-y-2 text-sm text-red-700">
+        <p>Operating systems are unavailable; editing is paused.</p>
+        <button type="button" className="rounded border border-neutral-400 px-3 py-1" onClick={() => void catalog.refetch()}>
+          Retry
+        </button>
+      </div>
+    ) : (
+      <p role="status">Loading operating systems...</p>
+    );
+  }
+  const options = catalog.data;
+  const families = [...new Map(options.map((option) => [option.family, option.family_label]))];
+  const saved = asset?.os_product ?? "";
+  const legacy = asset?.operating_system ?? "";
+  const osDescribed = [described("os_product"), legacy ? "os-legacy" : undefined].filter(Boolean).join(" ");
 
   return (
     <form onSubmit={submit} className="flex max-w-xl flex-col gap-3">
@@ -93,13 +117,36 @@ export function AssetForm({
           aria-describedby={described("ip_addresses")}
         />
       </Field>
-      <Field label="Operating system (optional)" name="operating_system" errors={errors}>
+      <Field label="Operating system" name="os_product" errors={errors}>
+        <select name="os_product" defaultValue={saved} className={INPUT} aria-describedby={osDescribed || undefined}>
+          <option value="">{legacy ? "Not classified" : "Unspecified"}</option>
+          {/* A code newer than this cached catalog stays selected, so saving keeps it. */}
+          {saved && !options.some((option) => option.code === saved) && <option value={saved}>{`${saved} (unrecognized)`}</option>}
+          {families.map(([family, label]) => (
+            <optgroup key={family} label={label}>
+              {options
+                .filter((option) => option.family === family)
+                .map((option) => (
+                  <option key={option.code} value={option.code}>
+                    {option.label}
+                  </option>
+                ))}
+            </optgroup>
+          ))}
+        </select>
+      </Field>
+      {legacy && (
+        <p id="os-legacy" className="text-sm text-neutral-600">
+          {`Legacy OS text: "${legacy}" (kept as recorded)`}
+        </p>
+      )}
+      <Field label="Operating system version (optional)" name="os_version" errors={errors}>
         <input
-          name="operating_system"
-          maxLength={150}
-          defaultValue={asset?.operating_system}
+          name="os_version"
+          maxLength={32}
+          defaultValue={asset?.os_version}
           className={INPUT}
-          aria-describedby={described("operating_system")}
+          aria-describedby={described("os_version")}
         />
       </Field>
       <Field label="Environment" name="environment" errors={errors}>

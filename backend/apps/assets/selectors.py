@@ -3,7 +3,7 @@
 from django.db.models import Q
 
 from apps.assets.exceptions import AssetForbidden, AssetNotFound
-from apps.assets.models import Asset
+from apps.assets.models import OS_FAMILY, Asset, OsProduct
 from apps.rbac.selectors import authorized_teams, can_access, is_platform_admin, scoped_teams
 
 VIEW = "assets.view_asset"
@@ -50,6 +50,19 @@ def search_assets(
     if q is not None:
         assets = assets.filter(Q(name__icontains=q) | Q(hostname__icontains=q))
     return assets.select_related("team").order_by("name", "id")
+
+
+def os_catalog():
+    """The OS catalog in display order with derived families (SPEC-0011). Constant: no query."""
+    return [
+        {
+            "code": product.value,
+            "label": product.label,
+            "family": OS_FAMILY[product].value,
+            "family_label": OS_FAMILY[product].label,
+        }
+        for product in OsProduct
+    ]
 
 
 def viewable_asset(principal, asset_id):

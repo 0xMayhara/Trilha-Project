@@ -1,4 +1,4 @@
-import type { QueryClient } from "@tanstack/react-query";
+import { queryOptions, type QueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 
 import { ACCESS_QUERY_KEY, accessPageSchema, clearOwnAccess, type AccessPage, type PermissionCode } from "@/lib/access";
@@ -41,7 +41,10 @@ export const assetSchema = z.object({
   kind: z.enum(ASSET_KINDS),
   hostname: z.string(),
   ip_addresses: z.array(z.string()),
-  operating_system: z.string(),
+  operating_system: z.string(), // legacy free text, read-only (SPEC-0011)
+  os_product: z.string().nullable(),
+  os_version: z.string(),
+  os_label: z.string().nullable(),
   environment: z.enum(ENVIRONMENTS).nullable(),
   criticality: z.enum(CRITICALITIES).nullable(),
   status: z.enum(STATUSES),
@@ -62,6 +65,36 @@ export const FILTER_KEYS = ["status", "team", "kind", "environment", "criticalit
 export type AssetFilters = Partial<Record<(typeof FILTER_KEYS)[number], string>>;
 
 export const ASSET_QUERY_KEY = ["assets"] as const;
+
+const catalogCode = z.string().regex(/^[a-z0-9_]{1,32}$/);
+const osCatalogEntrySchema = z.object({
+  code: catalogCode,
+  label: z.string().min(1),
+  family: catalogCode,
+  family_label: z.string().min(1),
+});
+export type OsCatalogEntry = z.infer<typeof osCatalogEntrySchema>;
+/** `next` must be null: a catalog larger than one page fails closed instead of losing options. */
+export const osCatalogPageSchema = z.object({
+  count: z.number().int().nonnegative(),
+  next: z.null(),
+  previous: z.null(),
+  results: z.array(osCatalogEntrySchema),
+});
+
+/** The backend's OS catalog (SPEC-0011). The same for every user; cleared with asset queries. */
+export const osCatalogQuery = queryOptions({
+  queryKey: [...ASSET_QUERY_KEY, "os-catalog"],
+  queryFn: async ({ signal }) =>
+    (await apiFetch("/api/v1/assets/os-catalog/?page_size=100", osCatalogPageSchema, { signal })).results,
+  staleTime: Infinity,
+});
+
+/** OS text for tables and details. Reads only the asset, never the catalog (SPEC-0011 NFR-03). */
+export function osSummary(asset: Pick<Asset, "os_product" | "os_version" | "os_label" | "operating_system">) {
+  if (asset.os_product) return [asset.os_label ?? asset.os_product, asset.os_version].filter(Boolean).join(" ");
+  return asset.operating_system ? "Not classified" : "Unspecified";
+}
 
 export function assetListKey(userId: string, filters: AssetFilters, page: number) {
   return [...ASSET_QUERY_KEY, userId, "list", filters, page] as const;
@@ -111,7 +144,8 @@ export type AssetInput = {
   kind: string;
   hostname: string;
   ip_addresses: string[];
-  operating_system: string;
+  os_product: string | null;
+  os_version: string;
   environment: string | null;
   criticality: string | null;
 };
@@ -162,7 +196,8 @@ export function readAssetForm(form: FormData): AssetInput {
     kind: text("kind"),
     hostname: text("hostname").trim(),
     ip_addresses: parseAddresses(text("ip_addresses")),
-    operating_system: text("operating_system"),
+    os_product: text("os_product") || null,
+    os_version: text("os_version"),
     environment: text("environment") || null,
     criticality: text("criticality") || null,
   };

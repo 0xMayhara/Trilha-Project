@@ -797,6 +797,8 @@ def test_asset_audit_and_logs_use_allowlists(world, caplog):
             "kind": "server",
             "hostname": "canary-host-6612.example",
             "ip_addresses": ["192.0.2.66"],
+            "os_product": "debian",
+            "os_version": "canary-os-6612",
         },
         format="json",
         **canary,
@@ -833,6 +835,7 @@ def test_asset_audit_and_logs_use_allowlists(world, caplog):
     for secret in (
         "canary-name",
         "canary-host",
+        "canary-os",
         "192.0.2.66",
         "canary-search",
         "canary-token",
@@ -857,7 +860,7 @@ def test_asset_validation_is_enforced_by_service_and_database(world):
         {"ip_addresses": [f"10.0.1.{n}" for n in range(1, 18)]},
         {"environment": "prod"},
         {"criticality": "urgent"},
-        {"operating_system": "Linux\u202e"},
+        {"os_version": "Linux\u202e"},
     ]
     for values in invalid:
         with pytest.raises(ValidationError) as caught:
@@ -903,7 +906,7 @@ def test_asset_text_rejects_controls_and_bidi_overrides(world):
         response = world.client.post(API, {**base, "name": name}, format="json")
         assert response.status_code == 400 and "name" in response.json()["error"]["details"], name
         response = world.client.post(
-            API, {**base, "name": "Ok", "operating_system": name}, format="json"
+            API, {**base, "name": "Ok", "os_product": "debian", "os_version": name}, format="json"
         )
         assert response.status_code == 400 or name.strip() == "", name
     assert world.client.get(f"{API}?q=a%E2%80%AEb").status_code == 400
@@ -1398,7 +1401,8 @@ def test_asset_crud_contract(world):
         "kind": "workstation",
         "hostname": "MAIL.Example.com",
         "ip_addresses": ["192.0.2.10"],
-        "operating_system": "Debian 13",
+        "os_product": "debian",
+        "os_version": "13",
         "environment": "production",
         "criticality": "critical",
     }
@@ -1413,6 +1417,9 @@ def test_asset_crud_contract(world):
         "hostname",
         "ip_addresses",
         "operating_system",
+        "os_product",
+        "os_version",
+        "os_label",
         "environment",
         "criticality",
         "status",
@@ -1420,6 +1427,8 @@ def test_asset_crud_contract(world):
         "created_at",
         "updated_at",
     }
+    os_fields = ("os_product", "os_version", "os_label", "operating_system")
+    assert tuple(asset[key] for key in os_fields) == ("debian", "13", "Debian", "")
     assert asset["team"] == {"id": str(world.alpha.pk), "code": "alpha", "name": "Alpha"}
     assert (asset["hostname"], asset["status"], asset["version"]) == (
         "mail.example.com",

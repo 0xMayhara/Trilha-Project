@@ -16,6 +16,7 @@ import {
   fetchAsset,
   fieldErrors,
   handleAssetError,
+  osCatalogQuery,
   restoreAsset,
   retireAsset,
   teamsWith,
@@ -47,6 +48,8 @@ export function AssetDetail({ id }: { id: string }) {
     queryFn: ({ signal }) => fetchAccessTeams(signal),
     enabled: Boolean(user),
   });
+  // Only editing needs the catalog; reading the asset never does (SPEC-0011 NFR-03).
+  const catalog = useQuery({ ...osCatalogQuery, enabled: Boolean(user) && editing });
   // Every write sends the version shown on screen; the server rejects stale ones with 409.
   const mutation = useMutation({
     mutationFn: (run: () => Promise<Asset>) => run(),
@@ -59,8 +62,8 @@ export function AssetDetail({ id }: { id: string }) {
     onError: (error) => handleAssetError(client, error),
   });
   useEffect(() => {
-    if (asset.error) void handleAssetError(client, asset.error);
-  }, [asset.error, client]);
+    for (const error of [asset.error, catalog.error]) if (error) void handleAssetError(client, error);
+  }, [asset.error, catalog.error, client]);
 
   if (!user) return null;
   if (asset.isPending) return <p role="status">Loading asset...</p>;
@@ -172,6 +175,7 @@ export function AssetDetail({ id }: { id: string }) {
       {editing && (
         <AssetForm
           asset={current}
+          catalog={catalog}
           errors={fieldErrors(mutation.error)}
           pending={mutation.isPending}
           submitLabel="Save changes"

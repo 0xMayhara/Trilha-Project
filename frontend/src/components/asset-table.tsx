@@ -1,8 +1,8 @@
 import Link from "next/link";
 
-import { CRITICALITY_LABELS, ENVIRONMENT_LABELS, KIND_LABELS, type Asset } from "@/lib/assets";
+import { CRITICALITY_LABELS, ENVIRONMENT_LABELS, KIND_LABELS, osSummary, type Asset } from "@/lib/assets";
 
-const HEADINGS = ["Name", "Kind", "Hostname", "IP addresses", "Team", "Environment", "Criticality", "Status"];
+const HEADINGS = ["Name", "Kind", "Hostname", "IP addresses", "Operating system", "Team", "Environment", "Criticality", "Status"];
 
 /** Every value is rendered as React text, never HTML (SEC-19). */
 export function AssetTable({ assets }: { assets: Asset[] }) {
@@ -29,6 +29,7 @@ export function AssetTable({ assets }: { assets: Asset[] }) {
             <td className="px-2 py-1">{KIND_LABELS[asset.kind]}</td>
             <td className="px-2 py-1">{asset.hostname || "None"}</td>
             <td className="px-2 py-1">{asset.ip_addresses.join(", ") || "None"}</td>
+            <td className="px-2 py-1">{osSummary(asset)}</td>
             <td className="px-2 py-1">
               {asset.team.name} ({asset.team.code})
             </td>
@@ -48,7 +49,8 @@ export function AssetFacts({ asset }: { asset: Asset }) {
     ["Kind", KIND_LABELS[asset.kind]],
     ["Hostname", asset.hostname || "None"],
     ["IP addresses", asset.ip_addresses.join(", ") || "None"],
-    ["Operating system", asset.operating_system || "None"],
+    ["Operating system", osSummary(asset)],
+    ...(asset.operating_system ? [["Legacy OS text", asset.operating_system] as [string, string]] : []),
     ["Environment", asset.environment ? ENVIRONMENT_LABELS[asset.environment] : "Unspecified"],
     ["Criticality", asset.criticality ? CRITICALITY_LABELS[asset.criticality] : "Unassessed"],
     ["Status", asset.status === "active" ? "Active" : "Retired"],

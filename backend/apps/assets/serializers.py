@@ -20,7 +20,8 @@ CREATE_FIELDS = {
     "kind": _TEXT,
     "hostname": _TEXT,
     "ip_addresses": (list,),
-    "operating_system": _TEXT,
+    "os_product": _NULLABLE_TEXT,
+    "os_version": _TEXT,
     "environment": _NULLABLE_TEXT,
     "criticality": _NULLABLE_TEXT,
 }
@@ -71,6 +72,7 @@ def parse_list_query(params):
 class AssetSerializer(serializers.ModelSerializer):
     team = TeamSummarySerializer(read_only=True)
     ip_addresses = serializers.SerializerMethodField()
+    os_label = serializers.SerializerMethodField()
 
     class Meta:
         model = Asset
@@ -82,6 +84,9 @@ class AssetSerializer(serializers.ModelSerializer):
             "hostname",
             "ip_addresses",
             "operating_system",
+            "os_product",
+            "os_version",
+            "os_label",
             "environment",
             "criticality",
             "status",
@@ -93,3 +98,7 @@ class AssetSerializer(serializers.ModelSerializer):
 
     def get_ip_addresses(self, asset):
         return display_ips(asset.ip_addresses)
+
+    def get_os_label(self, asset):
+        # Server-derived, so asset pages never depend on the catalog endpoint (NFR-03).
+        return asset.get_os_product_display()
