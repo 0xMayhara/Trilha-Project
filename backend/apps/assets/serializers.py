@@ -24,6 +24,8 @@ CREATE_FIELDS = {
     "os_version": _TEXT,
     "environment": _NULLABLE_TEXT,
     "criticality": _NULLABLE_TEXT,
+    "hardening_status": _NULLABLE_TEXT,
+    "internet_exposure": _NULLABLE_TEXT,
 }
 UPDATE_FIELDS = {
     **{key: types for key, types in CREATE_FIELDS.items() if key != "team_id"},
@@ -89,6 +91,8 @@ class AssetSerializer(serializers.ModelSerializer):
             "os_label",
             "environment",
             "criticality",
+            "hardening_status",
+            "internet_exposure",
             "status",
             "version",
             "created_at",

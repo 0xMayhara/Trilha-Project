@@ -166,6 +166,13 @@ def _migrate(target):
     return executor.loader.project_state([target]).apps
 
 
+def _restore():
+    # Back to the latest migrations, including those later SPECs add after CATALOG.
+    connection.check_constraints()
+    executor = MigrationExecutor(connection)
+    executor.migrate(executor.loader.graph.leaf_nodes())
+
+
 def _rows():
     with connection.cursor() as cursor:
         cursor.execute(
@@ -189,7 +196,7 @@ def test_os_migration_preserves_legacy_text_without_inference_cwe_221():
         # Never inferred, not even from an exact label or code.
         assert set(Asset.objects.values_list("os_product", "os_version")) == {(None, "")}
     finally:
-        _migrate(CATALOG)
+        _restore()
 
 
 def test_os_migration_reverse_keeps_legacy_text_cwe_221():
@@ -208,7 +215,7 @@ def test_os_migration_reverse_keeps_legacy_text_cwe_221():
         assert not {"os_product", "os_version"} & columns
         assert _rows() == before
     finally:
-        _migrate(CATALOG)
+        _restore()
     # Documented loss: a schema reversal drops classifications, never legacy text.
     assert list(Asset.objects.values_list("operating_system", "os_product", "os_version")) == [
         ("CentOS 7", None, "")

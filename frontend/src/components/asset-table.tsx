@@ -1,8 +1,28 @@
 import Link from "next/link";
 
-import { CRITICALITY_LABELS, ENVIRONMENT_LABELS, KIND_LABELS, osSummary, type Asset } from "@/lib/assets";
+import {
+  CRITICALITY_LABELS,
+  ENVIRONMENT_LABELS,
+  KIND_LABELS,
+  exposureSummary,
+  hardeningSummary,
+  osSummary,
+  type Asset,
+} from "@/lib/assets";
 
-const HEADINGS = ["Name", "Kind", "Hostname", "IP addresses", "Operating system", "Team", "Environment", "Criticality", "Status"];
+const HEADINGS = [
+  "Name",
+  "Kind",
+  "Hostname",
+  "IP addresses",
+  "Operating system",
+  "Team",
+  "Environment",
+  "Criticality",
+  "Hardening",
+  "Internet exposure",
+  "Status",
+];
 
 /** Every value is rendered as React text, never HTML (SEC-19). */
 export function AssetTable({ assets }: { assets: Asset[] }) {
@@ -35,6 +55,8 @@ export function AssetTable({ assets }: { assets: Asset[] }) {
             </td>
             <td className="px-2 py-1">{asset.environment ? ENVIRONMENT_LABELS[asset.environment] : "Unspecified"}</td>
             <td className="px-2 py-1">{asset.criticality ? CRITICALITY_LABELS[asset.criticality] : "Unassessed"}</td>
+            <td className="px-2 py-1">{hardeningSummary(asset.hardening_status)}</td>
+            <td className="px-2 py-1">{exposureSummary(asset.internet_exposure)}</td>
             <td className="px-2 py-1">{asset.status === "active" ? "Active" : "Retired"}</td>
           </tr>
         ))}
@@ -53,6 +75,9 @@ export function AssetFacts({ asset }: { asset: Asset }) {
     ...(asset.operating_system ? [["Legacy OS text", asset.operating_system] as [string, string]] : []),
     ["Environment", asset.environment ? ENVIRONMENT_LABELS[asset.environment] : "Unspecified"],
     ["Criticality", asset.criticality ? CRITICALITY_LABELS[asset.criticality] : "Unassessed"],
+    // Declared by the team, not verified (SPEC-0007 BR-25).
+    ["Hardening (declared)", hardeningSummary(asset.hardening_status)],
+    ["Internet exposure (declared)", exposureSummary(asset.internet_exposure)],
     ["Status", asset.status === "active" ? "Active" : "Retired"],
   ];
   return (
