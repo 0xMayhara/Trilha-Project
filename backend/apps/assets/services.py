@@ -28,6 +28,8 @@ from apps.assets.models import (
     Asset,
     Criticality,
     Environment,
+    HardeningStatus,
+    InternetExposure,
     Kind,
     OsProduct,
     Status,
@@ -67,6 +69,8 @@ MUTABLE_FIELDS = (
     "os_version",
     "environment",
     "criticality",
+    "hardening_status",
+    "internet_exposure",
 )
 CREATED_FIELDS = ("team_id", *MUTABLE_FIELDS, "status")
 
@@ -91,6 +95,8 @@ _CLEANERS = {
     "os_version": canonical_os_version,
     "environment": _choice(Environment, nullable=True),
     "criticality": _choice(Criticality, nullable=True),
+    "hardening_status": _choice(HardeningStatus, nullable=True),
+    "internet_exposure": _choice(InternetExposure, nullable=True),
 }
 
 

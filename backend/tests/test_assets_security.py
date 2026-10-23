@@ -1422,6 +1422,8 @@ def test_asset_crud_contract(world):
         "os_label",
         "environment",
         "criticality",
+        "hardening_status",
+        "internet_exposure",
         "status",
         "version",
         "created_at",

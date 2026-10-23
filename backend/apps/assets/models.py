@@ -38,6 +38,21 @@ class Criticality(models.TextChoices):
     CRITICAL = "critical"
 
 
+class HardeningStatus(models.TextChoices):
+    """Declared by the team, never inferred (SPEC-0007 BR-25). Null means not assessed."""
+
+    HARDENED = "hardened"
+    PARTIALLY_HARDENED = "partially_hardened"
+    NOT_HARDENED = "not_hardened"
+
+
+class InternetExposure(models.TextChoices):
+    """Declared by the team (SPEC-0007 BR-25). Null means unknown, never "not exposed"."""
+
+    EXPOSED = "exposed"
+    NOT_EXPOSED = "not_exposed"
+
+
 class Status(models.TextChoices):
     ACTIVE = "active"
     RETIRED = "retired"
@@ -144,6 +159,14 @@ class Asset(models.Model):
     # one empty state, not a second one.
     environment = models.CharField(max_length=16, choices=Environment.choices, null=True)  # noqa: DJ001
     criticality = models.CharField(max_length=16, choices=Criticality.choices, null=True)  # noqa: DJ001
+    # Declared posture (SPEC-0007 BR-25): null is "not assessed" / "unknown", with no default, so
+    # rows written before this column, or by the previous release, stay unassessed.
+    hardening_status = models.CharField(  # noqa: DJ001
+        max_length=24, choices=HardeningStatus.choices, null=True
+    )
+    internet_exposure = models.CharField(  # noqa: DJ001
+        max_length=16, choices=InternetExposure.choices, null=True
+    )
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.ACTIVE)
     version = models.PositiveIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -173,6 +196,16 @@ class Asset(models.Model):
                 condition=models.Q(criticality__isnull=True)
                 | models.Q(criticality__in=Criticality.values),
                 name="asset_criticality",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(hardening_status__isnull=True)
+                | models.Q(hardening_status__in=HardeningStatus.values),
+                name="asset_hardening_status",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(internet_exposure__isnull=True)
+                | models.Q(internet_exposure__in=InternetExposure.values),
+                name="asset_internet_exposure",
             ),
             models.CheckConstraint(
                 condition=models.Q(status__in=Status.values), name="asset_status"
