@@ -4,7 +4,7 @@ import logging
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import exceptions
-from rest_framework.generics import ListAPIView
+from rest_framework.generics import GenericAPIView, ListAPIView
 from rest_framework.permissions import SAFE_METHODS
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -18,7 +18,7 @@ from apps.assets.exceptions import (
     StaleAsset,
     TeamUnavailable,
 )
-from apps.assets.selectors import search_assets, viewable_asset
+from apps.assets.selectors import os_catalog, search_assets, viewable_asset
 from apps.assets.serializers import (
     CREATE_FIELDS,
     LIST_FILTERS,
@@ -115,6 +115,14 @@ class AssetDetailView(AssetAPIView):
             lambda principal: services.update_asset(principal, pk, version=version, changes=data),
         )
         return Response(AssetSerializer(asset).data)
+
+
+class OsCatalogView(AssetAPIView, GenericAPIView):
+    """Constant, tenant-free reference data for any enabled session (SPEC-0011 SEC-03)."""
+
+    def get(self, request):
+        validate_query(request)
+        return self.get_paginated_response(self.paginate_queryset(os_catalog()))
 
 
 class AssetTransitionView(AssetAPIView):

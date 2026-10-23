@@ -1,5 +1,6 @@
 from django.urls import include, path
 
+from apps.assets.views import OsCatalogView
 from apps.core.api.views import LivenessView
 from apps.rbac.views import OwnAccessView, PlatformSelfView
 from apps.teams.views import TeamDetailView, TeamListView
@@ -12,6 +13,8 @@ urlpatterns = [
     path("api/v1/rbac/me/platform/", PlatformSelfView.as_view(), name="rbac-me-platform"),
     path("api/v1/teams/", TeamListView.as_view(), name="team-list"),
     path("api/v1/teams/<uuid:pk>/", TeamDetailView.as_view(), name="team-detail"),
+    # Reference data, not an asset: apps.assets.urls stays UUID-only (SPEC-0005 SEC-28).
+    path("api/v1/assets/os-catalog/", OsCatalogView.as_view(), name="asset-os-catalog"),
     path("api/v1/assets/", include("apps.assets.urls")),
     path("api/v1/admin/", include("apps.rbac.admin_urls")),
 ]

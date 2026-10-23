@@ -95,6 +95,24 @@ def test_admin_asset_oversight_is_read_only_cwe_863():
     assert root.get(API).json()["count"] == 0  # a membership without grants shows nothing
 
 
+def test_platform_admin_cannot_change_os_fields_cwe_863():
+    # SPEC-0011 SEC-02: read oversight never becomes authority over OS classification.
+    alpha = active_team("alpha")
+    owner = make_user("owner")
+    grant(owner, alpha, *ASSET_CODES)
+    asset = asset_in(alpha, owner, "Web 01")
+    make_admin("root")
+    root = Browser().login("root")
+    assert root.reauthenticate().status_code == 204
+    assert root.get(f"{API}{asset.pk}/").status_code == 200
+    body = {"version": 1, "os_product": "debian", "os_version": "12"}
+    assert root.patch(f"{API}{asset.pk}/", body).status_code == 404
+    teams.add_member(OPERATOR, alpha.pk, root.get("/api/v1/auth/me/").json()["id"])
+    assert root.patch(f"{API}{asset.pk}/", body).status_code == 403
+    assert Asset.objects.get(pk=asset.pk).os_product is None
+    assert not AuditEvent.objects.filter(action="assets.asset_updated").exists()
+
+
 def test_admin_asset_list_query_count_is_independent_of_size():
     alpha = active_team("alpha")
     owner = make_user("owner")

@@ -23,11 +23,20 @@ from apps.assets.exceptions import (
     StaleAsset,
     TeamUnavailable,
 )
-from apps.assets.models import ACTIVE_NAME_CONSTRAINT, Asset, Criticality, Environment, Kind, Status
+from apps.assets.models import (
+    ACTIVE_NAME_CONSTRAINT,
+    Asset,
+    Criticality,
+    Environment,
+    Kind,
+    OsProduct,
+    Status,
+)
 from apps.assets.selectors import scoped_assets
 from apps.assets.validation import (
     canonical_hostname,
     canonical_ip_list,
+    canonical_os_version,
     display_ips,
 )
 from apps.audit.changes import snapshot
@@ -54,7 +63,8 @@ MUTABLE_FIELDS = (
     "kind",
     "hostname",
     "ip_addresses",
-    "operating_system",
+    "os_product",
+    "os_version",
     "environment",
     "criticality",
 )
@@ -77,7 +87,8 @@ _CLEANERS = {
     "kind": _choice(Kind),
     "hostname": canonical_hostname,
     "ip_addresses": canonical_ip_list,
-    "operating_system": lambda value: normalize_text(value, required=False),
+    "os_product": _choice(OsProduct, nullable=True),
+    "os_version": canonical_os_version,
     "environment": _choice(Environment, nullable=True),
     "criticality": _choice(Criticality, nullable=True),
 }
@@ -96,6 +107,14 @@ def _clean(values):
     if errors:
         raise ValidationError(errors)
     return cleaned
+
+
+def _check_os(product, version):
+    """A version describes a chosen product, never nothing (SPEC-0011 BR-05)."""
+    if version and product is None:
+        raise ValidationError(
+            {"os_version": ["Choose an operating system before setting its version."]}
+        )
 
 
 def _version(value):
@@ -225,6 +244,7 @@ def create_asset(principal, *, team_id, **fields):
     if missing:
         raise ValidationError(missing)
     values = _clean(fields)
+    _check_os(values.get("os_product"), values.get("os_version"))
     with _mutation("create", principal):
         if not _eligible(principal, team_id):
             raise TeamUnavailable
@@ -252,6 +272,10 @@ def update_asset(principal, asset_id, *, version, changes):
         _check_version(asset, version)  # before no-op detection (SEC-11)
         if asset.status != Status.ACTIVE:
             raise InvalidState
+        # Against the locked row: a PATCH may carry only one of the two fields (SEC-07).
+        _check_os(
+            values.get("os_product", asset.os_product), values.get("os_version", asset.os_version)
+        )
         changed = tuple(field for field, value in values.items() if getattr(asset, field) != value)
         if not changed:
             return asset
