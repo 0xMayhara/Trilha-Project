@@ -494,6 +494,52 @@ def test_runtime_cannot_update_or_delete_logbook_entries_cwe_471(fresh, django_d
         assert stored == ("finding_created", "")
 
 
+def test_database_error_logs_exclude_row_content_cwe_532(fresh, django_db_blocker):
+    from django.db import IntegrityError
+
+    from apps.findings.models import Finding, FindingLogEntry
+
+    finding, _ = _finding_rows(fresh, django_db_blocker)
+    app_marker, owner_marker = f"APP-{secrets.token_hex(8)}", f"OWNER-{secrets.token_hex(8)}"
+    with django_connected(fresh, APP, django_db_blocker):
+        row = Finding.objects.get(pk=finding)
+        for invalid in (
+            {"kind": "comment", "actor": None, "body": app_marker, "idempotency_key": uuid.uuid4()},
+            {"kind": "system", "event": "finding_updated", "body": app_marker},
+        ):  # violations of logentry_comment_shape and logentry_system_shape, with the body bound
+            with pytest.raises(IntegrityError):
+                FindingLogEntry.objects.create(finding=row, sequence=99, **invalid)
+    insert = (
+        "INSERT INTO findings_findinglogentry (id, finding_id, sequence, kind, event, body,"
+        " metadata, created_at) VALUES (gen_random_uuid(), %s, 99, 'system', 'probe', %s, '{}',"
+        " now())"
+    )
+    with fresh.connect(APP) as app, pytest.raises(errors.CheckViolation):
+        psycopg.ClientCursor(app).execute(insert, [finding, app_marker])
+    # Control: the owner keeps PostgreSQL's defaults, so the same failure logs the row content.
+    with fresh.connect(OWNER) as owner, pytest.raises(errors.CheckViolation):
+        psycopg.ClientCursor(owner).execute(insert, [finding, owner_marker])
+    with fresh.connect(APP) as app:
+        for setting in ("log_min_error_statement", "log_error_verbosity"):
+            with pytest.raises(errors.InsufficientPrivilege):
+                app.execute(f"SET {setting} = DEFAULT")
+    deadline = time.monotonic() + 10
+    while owner_marker not in (logs := fresh.logs()) and time.monotonic() < deadline:
+        time.sleep(0.2)
+    assert owner_marker in logs
+    assert (
+        'violates check constraint "logentry_comment_shape"' in logs
+    )  # the error itself is logged
+    assert app_marker not in logs
+    with fresh.connect("postgres") as superuser:
+        settings = superuser.execute(
+            "SELECT s.setconfig FROM pg_db_role_setting s JOIN pg_roles r ON r.oid = s.setrole"
+            " WHERE r.rolname = %s AND s.setdatabase = 0",
+            [APP],
+        ).fetchone()[0]
+        assert sorted(settings) == ["log_error_verbosity=terse", "log_min_error_statement=panic"]
+
+
 def test_emergency_redaction_is_owner_only_one_way_and_audited_cwe_471(fresh, django_db_blocker):
     from apps.audit.context import audit_source
     from apps.findings.models import Finding
