@@ -39,5 +39,9 @@ class InvalidState(AssetConflict):
     """The lifecycle state does not allow the operation."""
 
 
+class TransferUnconfirmed(AssetConflict):
+    """Records follow the asset, and the request did not acknowledge their current count."""
+
+
 class AssetIntegrityFailure(AssetError):
     """An unexpected database integrity violation; raised without its database cause."""

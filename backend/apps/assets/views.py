@@ -17,6 +17,7 @@ from apps.assets.exceptions import (
     NameTaken,
     StaleAsset,
     TeamUnavailable,
+    TransferUnconfirmed,
 )
 from apps.assets.selectors import os_catalog, search_assets, viewable_asset
 from apps.assets.serializers import (
@@ -42,6 +43,7 @@ TEAM_UNAVAILABLE = "Select a team where you can perform this action."
 STALE = "The asset changed. Reload and try again."
 NAME_TAKEN = "An active asset with this name already exists in the team."
 INVALID_STATE = "The asset's state does not allow this operation."
+UNCONFIRMED = "This asset has findings. Review them and confirm the transfer."
 
 
 class AssetAPIView(APIView):
@@ -73,6 +75,8 @@ class AssetAPIView(APIView):
             raise Conflict(NAME_TAKEN) from None
         except InvalidState:
             raise Conflict(INVALID_STATE) from None
+        except TransferUnconfirmed:
+            raise Conflict(UNCONFIRMED) from None
         except DjangoValidationError as exc:
             raise exceptions.ValidationError(exc.message_dict) from None
 
@@ -154,7 +158,11 @@ class AssetTransferView(AssetAPIView):
         asset = self.run(
             "transfer",
             lambda principal: services.transfer_asset(
-                principal, pk, version=data["version"], team_id=data["team_id"]
+                principal,
+                pk,
+                version=data["version"],
+                team_id=data["team_id"],
+                finding_count=data.get("finding_count"),
             ),
         )
         return Response(AssetSerializer(asset).data)
