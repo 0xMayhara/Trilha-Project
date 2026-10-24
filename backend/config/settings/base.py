@@ -186,6 +186,8 @@ REST_FRAMEWORK = {
         "asset_write": env_str("DJANGO_THROTTLE_ASSET_WRITE_RATE", "60/min"),
         # Per-user administrative mutations (SPEC-0010 SEC-22); reads never consume this budget.
         "admin_write": env_str("DJANGO_THROTTLE_ADMIN_WRITE_RATE", "60/min"),
+        # Per-user finding mutations (SPEC-0007 SEC-32); reads and polls never consume it.
+        "finding_write": env_str("DJANGO_THROTTLE_FINDING_WRITE_RATE", "60/min"),
     },
     # Exactly one trusted proxy, which overwrites X-Forwarded-For (SEC-18).
     "NUM_PROXIES": 1,

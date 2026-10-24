@@ -16,6 +16,7 @@ urlpatterns = [
     # Reference data, not an asset: apps.assets.urls stays UUID-only (SPEC-0005 SEC-28).
     path("api/v1/assets/os-catalog/", OsCatalogView.as_view(), name="asset-os-catalog"),
     path("api/v1/assets/", include("apps.assets.urls")),
+    path("api/v1/findings/", include("apps.findings.urls")),
     path("api/v1/admin/", include("apps.rbac.admin_urls")),
 ]
 
