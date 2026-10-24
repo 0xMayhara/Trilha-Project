@@ -263,6 +263,8 @@ def test_default_throttles_are_configured():
         "asset_write",
         # Per-user administrative mutations (SPEC-0010 SEC-22).
         "admin_write",
+        # Per-user finding mutations (SPEC-0007 SEC-32).
+        "finding_write",
     }
 
 

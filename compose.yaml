@@ -86,6 +86,11 @@ services:
 
   backend:
     <<: *backend
+    environment:
+      <<: *runtime-environment
+      # Audit content digest keys (SPEC-0007 SEC-53): only the backend signs and verifies them.
+      AUDIT_DIGEST_KEYS: ${AUDIT_DIGEST_KEYS:?set AUDIT_DIGEST_KEYS in .env}
+      AUDIT_DIGEST_ACTIVE_KEY_ID: ${AUDIT_DIGEST_ACTIVE_KEY_ID:?set AUDIT_DIGEST_ACTIVE_KEY_ID in .env}
     healthcheck: &readiness
       test: ["CMD", "python", "manage.py", "check_ready"]
       interval: 15s

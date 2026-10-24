@@ -12,6 +12,7 @@ from psycopg import sql
 
 SCHEMA = "public"
 STANDARD = ("SELECT", "INSERT", "UPDATE", "DELETE")
+UPDATABLE = ("SELECT", "INSERT", "UPDATE")  # SPEC-0007: records that change but are never removed
 APPEND_ONLY = ("SELECT", "INSERT")
 NO_ACCESS = ()
 
@@ -27,6 +28,9 @@ TABLE_PRIVILEGES = {
     "django_content_type": STANDARD,
     "django_migrations": NO_ACCESS,  # migration state belongs to the schema owner
     "django_session": STANDARD,
+    "findings_finding": UPDATABLE,  # SPEC-0007: findings are business records, never deleted
+    # SPEC-0007: the logbook is append-only; trigger findings_logentry_append_only also binds owners
+    "findings_findinglogentry": APPEND_ONLY,
     "rbac_platformaccess": STANDARD,
     "rbac_role": STANDARD,
     "rbac_role_permissions": STANDARD,

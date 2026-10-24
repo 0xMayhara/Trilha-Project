@@ -6,11 +6,17 @@ from urllib.parse import quote
 
 from django.core.exceptions import ImproperlyConfigured
 
-from config.env import env_bool, env_int, env_origin, env_str
+from config.env import env_bool, env_int, env_key_ring, env_origin, env_str
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 SECRET_KEY = env_str("DJANGO_SECRET_KEY")
+# Keys of the keyed audit content digests (SPEC-0007 SEC-49, SEC-53), separate from SECRET_KEY so
+# rotating that never touches audit verification. Only the backend holds them; other services run
+# with an empty ring, and config/wsgi.py refuses to serve HTTP without one.
+AUDIT_DIGEST_KEYS, AUDIT_DIGEST_ACTIVE_KEY_ID = env_key_ring(
+    "AUDIT_DIGEST_KEYS", "AUDIT_DIGEST_ACTIVE_KEY_ID"
+)
 DEBUG = False
 ALLOWED_HOSTS: list[str] = []
 
@@ -26,6 +32,7 @@ INSTALLED_APPS = [
     "apps.teams",
     "apps.rbac",
     "apps.assets",
+    "apps.findings",
 ]
 
 MIDDLEWARE = [
@@ -179,6 +186,8 @@ REST_FRAMEWORK = {
         "asset_write": env_str("DJANGO_THROTTLE_ASSET_WRITE_RATE", "60/min"),
         # Per-user administrative mutations (SPEC-0010 SEC-22); reads never consume this budget.
         "admin_write": env_str("DJANGO_THROTTLE_ADMIN_WRITE_RATE", "60/min"),
+        # Per-user finding mutations (SPEC-0007 SEC-32); reads and polls never consume it.
+        "finding_write": env_str("DJANGO_THROTTLE_FINDING_WRITE_RATE", "60/min"),
     },
     # Exactly one trusted proxy, which overwrites X-Forwarded-For (SEC-18).
     "NUM_PROXIES": 1,

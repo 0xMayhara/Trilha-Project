@@ -27,6 +27,7 @@ this README works the same with `podman-compose`.
 cp .env.example .env
 # Replace every "change-me" value (all passwords must differ), e.g. with:
 python3 -c "import secrets; print(secrets.token_urlsafe(64))"
+# AUDIT_DIGEST_KEYS needs its own format (id:32 random bytes in base64url); .env.example shows how.
 # Recommended: pin the Compose project so every command targets the same volumes.
 echo "COMPOSE_PROJECT_NAME=trilha" >> .env
 docker compose up --build -d
@@ -62,13 +63,15 @@ PostgreSQL uses three roles (SPEC-0013):
 |---|---|---|
 | `postgres` (superuser) | the `db` container only: provisioning, backups | everything |
 | `POSTGRES_USER` (schema owner, `trilha`) | the `migrate` service only | own the schema, run migrations, grant the runtime role |
-| `POSTGRES_RUNTIME_USER` (`trilha_app`) | `backend`, `worker`, management commands | read and write application rows; insert and read audit events. No DDL, no `TRUNCATE`, no changes to audit events, no other databases |
+| `POSTGRES_RUNTIME_USER` (`trilha_app`) | `backend`, `worker`, management commands | read and write application rows; insert and read audit events and logbook entries; edit findings but never delete them. No DDL, no `TRUNCATE`, no changes to audit events or logbook entries, no other databases |
 
 - The `migrate` service runs `manage.py db_migrate`: migrations as the owner, then the runtime role's
   grants from `backend/apps/core/db_privileges.py`.
 - **Every table must be classified there.** A migration that adds a table without classifying it
   makes `migrate` fail, and the stack does not start.
 - `backend` and `worker` report unhealthy if they connect with any privileged role.
+- Provisioning also stops PostgreSQL from logging the text or row content of the runtime role's
+  failed statements (they could quote a comment). Re-run it after upgrading to apply this.
 
 **What this does not do:**
 
@@ -122,7 +125,39 @@ Then sign in, edit an asset and open the audit trail.
 Provisioning is idempotent and never changes an owner. If the database belongs to a different role,
 it stops without changing anything.
 
+### Upgrading to the findings release (SPEC-0007 slice B)
+
+1. Back up and verify (`backup.sh`, then `restore-verify.sh` until `RESULT: PASS`), as above.
+2. Add `AUDIT_DIGEST_KEYS` and `AUDIT_DIGEST_ACTIVE_KEY_ID` to `.env` (see
+   [Audit digest keys](#audit-digest-keys)). The backend does not start without them.
+3. Apply:
+
+   ```sh
+   git pull && docker compose build
+   docker compose up -d db
+   docker compose exec -T db sh /docker-entrypoint-initdb.d/01-provision.sh   # runtime-role log settings
+   docker compose up -d                                                          # findings tables and grants
+   ```
+
 ### Rollback
+
+**Rollback below the findings release.** The previous release's `db_migrate` refuses tables it does
+not know, so park them first. Rows, constraints and the append-only trigger are kept; while parked,
+nothing but the owner can read them. Each run needs the owner's go-ahead.
+
+```sh
+deploy/postgres/backup.sh --project <project> ~/trilha-backups   # then restore-verify.sh: PASS
+docker compose stop backend worker
+docker compose exec -T db sh -s park findings < deploy/postgres/park-tables.sh
+# check out the previous release, restore its .env, then:
+docker compose up --build -d
+```
+
+To roll forward again: `docker compose stop backend worker`, then
+`docker compose exec -T db sh -s unpark findings < deploy/postgres/park-tables.sh`, then deploy this
+release (`up --build -d`); its `db_migrate` re-applies the tables' grants. The script refuses unknown
+slices and half-parked states without changing anything, and repeating it is harmless. Backups taken
+while parked include the parked tables, and `restore-verify.sh` checks that they stay private.
 
 **Application rollback.** Check out the previous release and restore its `.env`. If you rotated the
 owner password, put the **new** value in `POSTGRES_PASSWORD`, because the previous release connects
@@ -174,6 +209,43 @@ deploy/postgres/backup.sh --project <project> <directory-outside-the-repository>
   4. Create an empty one, `CREATE DATABASE trilha OWNER trilha;`, and re-run provisioning.
   5. `pg_restore` as above, then `docker compose up -d`.
   6. Delete the renamed database only once you are satisfied.
+
+### Audit digest keys
+
+Audit events never hold finding descriptions or comments, only a keyed digest (HMAC-SHA256) that
+proves the stored text has not changed. The keys live only in the backend's environment, apart from
+`DJANGO_SECRET_KEY`:
+
+- `AUDIT_DIGEST_KEYS`: comma-separated `id:key` pairs; each key is 32 random bytes in base64url.
+  `AUDIT_DIGEST_ACTIVE_KEY_ID` names the one that signs.
+- **Rotate** by appending a new pair and switching the active ID. Keep the old pairs as long as the
+  audit events they signed are kept; removing one is an owner decision.
+- **Back them up** with the other deployment secrets, separately from database dumps. A lost key does
+  not lose data; its digests just become unverifiable.
+- **Verify** (read-only, prints counts only):
+  `docker compose exec backend python manage.py verify_logbook_digests [--finding <uuid>]`. A digest
+  whose key is no longer configured is reported as unverifiable, never as a mismatch.
+
+### Emergency logbook redaction
+
+Logbook entries cannot be edited or deleted, by anyone, through the application. For a pasted secret
+or sensitive personal data there is one owner-controlled procedure, run by the infrastructure operator
+with the schema-owner credential:
+
+1. **Ticket:** record the owner's decision. For a secret, **rotate it first**: redaction does not
+   undo exposure.
+2. **Dry run** (prints the entry ID, kind, author, time and length, never the content):
+   `docker compose run --rm migrate python manage.py redact_logbook_entry --finding <uuid> --sequence <n> --reason secret|personal_data --ticket <ref>`
+3. **Execute:** the same command with `--execute`. It blanks the content once, adds a visible
+   "removed by the platform owner" notice to the logbook and records an audit event. Open browser
+   tabs drop the content at their next refresh.
+4. **New verified backup**, then decide (in the ticket) what to do with older dumps, snapshots and
+   off-site copies: they still hold the content.
+5. **Optional, announced maintenance window:** `VACUUM (FULL) findings_findinglogentry; CHECKPOINT;`
+   as `postgres`. It blocks every logbook read while it runs.
+
+This is not secure erasure: copies can survive in WAL segments, old table files on the disk, dumps,
+volume snapshots and PostgreSQL logs from before the runtime-role log settings.
 
 ### Rotating database passwords
 
@@ -321,6 +393,29 @@ docker compose exec backend python manage.py rbac_assign_role soc alice asset-ma
   environment, hardening (hardened, partially hardened, not hardened) and internet exposure
   (exposed, not exposed). An empty value means *not assessed* (criticality, hardening) or *unknown*
   (exposure). It is never read as a negative answer, and Trilha does not verify declared values.
+
+## Findings
+
+A finding is a security issue reported on one asset. It belongs to the asset's **current** team: it
+moves when the asset moves, and only that team's members (with the permissions below) see it. Admins
+read every finding but change none through Admin authority.
+
+| Permission | Allows |
+|---|---|
+| `findings.view_finding` | List and read the team's findings and their logbooks |
+| `findings.add_finding` | Report a finding on an active asset (also needs `assets.view_asset`) |
+| `findings.change_finding` | Edit title, description, category, severity and CVE IDs |
+| `findings.comment_finding`, `findings.work_finding`, `findings.override_priority` | Reserved for upcoming releases |
+
+- Report from the asset's page ("Report finding"); browse at `/findings`. New findings are open.
+- Status, assignee, reporter and priority are never edited through the form or the API body.
+- The **Operational Logbook** of each finding records system events (reported, edited, asset moved).
+  It is read-only here; comments arrive in a later release. Entries are never edited or deleted.
+- Transferring an asset with findings also needs `findings.view_finding` in both teams, and the
+  transfer request must confirm the current number of findings (`finding_count`). Assets without
+  findings transfer as before.
+- Retiring an asset keeps its findings readable and editable; new findings cannot be reported on it.
+- Finding changes are limited per user (`DJANGO_THROTTLE_FINDING_WRITE_RATE`, default `60/min`).
 
 ## Development
 

@@ -39,9 +39,11 @@ db_container() {
 # One line per application table: table|owner|acl|rows. A NULL ACL is written as the owner-only
 # default it means, because pg_dump does not reproduce an explicit ACL equal to that default.
 # Sessions are excluded from backups, so their count is recorded as "excluded" (restored empty).
-MANIFEST_SQL="SELECT c.relname, pg_get_userbyid(c.relowner), coalesce(c.relacl, acldefault('r', c.relowner))::text,
+# Tables parked for a rollback (park-tables.sh, SPEC-0007) are listed as trilha_parked.<table>.
+MANIFEST_SQL="SELECT CASE WHEN n.nspname = 'public' THEN c.relname ELSE n.nspname || '.' || c.relname END,
+    pg_get_userbyid(c.relowner), coalesce(c.relacl, acldefault('r', c.relowner))::text,
     CASE WHEN c.relname = 'django_session' THEN 'excluded' ELSE
     (xpath('/row/n/text()', query_to_xml(format('SELECT count(*) AS n FROM %I.%I',
         n.nspname, c.relname), false, true, '')))[1]::text END
 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') ORDER BY 1;"
+WHERE n.nspname IN ('public', 'trilha_parked') AND c.relkind IN ('r', 'p') ORDER BY 1;"

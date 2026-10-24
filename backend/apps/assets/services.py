@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, OperationalError, transaction
 
-from apps.accounts.selectors import users
+from apps.assets import transfer
 from apps.assets.exceptions import (
     AssetForbidden,
     AssetIntegrityFailure,
@@ -45,10 +45,9 @@ from apps.audit.changes import snapshot
 from apps.core.text import normalize_text
 from apps.rbac import events
 from apps.rbac.catalog import catalog_action
-from apps.rbac.locking import bound_lock_waits, lock_failure
+from apps.rbac.locking import bound_lock_waits, lock_authority, lock_failure
 from apps.rbac.principals import UserPrincipal
-from apps.rbac.selectors import assignments, can_access, roles, scoped_teams
-from apps.teams.selectors import teams
+from apps.rbac.selectors import can_access, scoped_teams
 
 logger = logging.getLogger("apps.assets")
 
@@ -195,25 +194,7 @@ def _require(principal, team_id, codes, asset=None):
 
 
 def _lock(principal, operation, team_ids):
-    team_ids = sorted(set(team_ids))
-
-    def role_ids():
-        return set(
-            assignments()
-            .filter(membership__user_id=principal.user_id, membership__team_id__in=team_ids)
-            .values_list("role_id", flat=True)
-        )
-
-    candidates = role_ids()
-    # Lock by primary key only: no row data (such as the password hash) is read into memory.
-    for rows in (
-        roles().filter(pk__in=candidates),
-        teams().filter(pk__in=team_ids),
-        users().filter(pk=principal.user_id),
-    ):
-        list(rows.select_for_update(no_key=True).order_by("pk").values_list("pk", flat=True))
-    # A role assigned before the Team locks is not locked; never acquire a Role after a Team.
-    if not role_ids() <= candidates:
+    if not lock_authority(principal, team_ids):
         _lock_unavailable(operation, principal, "role_drift")
         raise StaleAsset
 
@@ -339,11 +320,19 @@ def restore_asset(principal, asset_id, *, version):
     )
 
 
-def transfer_asset(principal, asset_id, *, version, team_id):
+def _count(value):
+    # Optional acknowledgement of the records that follow the asset (SPEC-0007 BR-16).
+    if value is not None and (type(value) is not int or value < 0):
+        raise ValidationError({"finding_count": ["Expected a non-negative integer."]})
+    return value
+
+
+def transfer_asset(principal, asset_id, *, version, team_id, finding_count=None):
     _require_user(principal)
     version = _version(version)
     asset_id = _uuid(asset_id)
     destination = _uuid(team_id, "team_id")
+    finding_count = _count(finding_count)
     with _mutation("transfer", principal):
         source = _source_team(principal, asset_id)
         if not _eligible(principal, destination):
@@ -359,6 +348,10 @@ def transfer_asset(principal, asset_id, *, version, team_id):
             raise ValidationError({"team_id": ["Choose a different team."]})
         if asset.status != Status.ACTIVE:
             raise InvalidState
+        # Dependent modules authorize under the same locks and record in the same transaction.
+        participants = transfer.participants()
+        for participant in participants:
+            participant.authorize(principal, asset, source, destination, finding_count)
         before = snapshot(asset, ("team_id",))
         asset.team_id = destination
         asset.version += 1
@@ -366,4 +359,6 @@ def transfer_asset(principal, asset_id, *, version, team_id):
         events.emit(
             principal, "assets.asset_transferred", asset, before=before, fields=("team_id",)
         )
+        for participant in participants:
+            participant.record(principal, asset, source, destination)
     return asset

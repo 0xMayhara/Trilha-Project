@@ -78,7 +78,7 @@ fi
 # 3. Migration state: every recorded application migration exists in the checked-out code.
 missing=""
 for entry in $(sql "SELECT app || '/' || name FROM django_migrations
-                    WHERE app IN ('accounts', 'assets', 'audit', 'rbac', 'teams')"); do
+                    WHERE app IN ('accounts', 'assets', 'audit', 'findings', 'rbac', 'teams')"); do
     # Names come from the (untrusted) dump: only app/0001_name shapes ever become a path.
     if ! printf '%s' "$entry" | grep -Eq '^[a-z]+/[0-9]{4}_[a-z0-9_]+$' \
         || [ ! -f "$here/../../backend/apps/${entry%%/*}/migrations/${entry#*/}.py" ]; then
@@ -100,13 +100,22 @@ if [ -z "$differences" ]; then check manifest ok; else check manifest fail "$(ec
 excluded=$(sql "SELECT count(*) FROM django_session")
 if [ "$excluded" = 0 ]; then check sessions_excluded ok; else check sessions_excluded fail "$excluded"; fi
 
-# 5. Ownership and grants.
+# 5. Ownership and grants, including tables parked for a rollback (SPEC-0007).
 foreign=$(sql "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-               WHERE n.nspname = 'public' AND pg_get_userbyid(c.relowner) <> '$owner'")
+               WHERE n.nspname IN ('public', 'trilha_parked')
+                 AND pg_get_userbyid(c.relowner) <> '$owner'")
 if [ "$foreign" = 0 ]; then check owners ok; else check owners fail "$foreign objects"; fi
 public=$(sql "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace,
-               aclexplode(c.relacl) a WHERE n.nspname = 'public' AND a.grantee = 0")
+               aclexplode(c.relacl) a WHERE n.nspname IN ('public', 'trilha_parked')
+                 AND a.grantee = 0")
 if [ "$public" = 0 ]; then check no_public_grants ok; else check no_public_grants fail "$public"; fi
+# Parked tables stay private: no grant to anyone but the owner, on the schema or its tables.
+parked=$(sql "SELECT count(*) FROM pg_namespace n, aclexplode(n.nspacl) a
+               WHERE n.nspname = 'trilha_parked' AND a.grantee <> n.nspowner")
+parked=$((parked + $(sql "SELECT count(*) FROM pg_class c JOIN pg_namespace n
+               ON n.oid = c.relnamespace, aclexplode(c.relacl) a
+               WHERE n.nspname = 'trilha_parked' AND a.grantee <> c.relowner")))
+if [ "$parked" = 0 ]; then check parked_tables_private ok; else check parked_tables_private fail "$parked grants"; fi
 
 # 6. Audit protection: the trigger is present and rejects an update, even for the superuser.
 trigger=$(sql "SELECT count(*) FROM pg_trigger WHERE tgrelid = 'audit_auditevent'::regclass

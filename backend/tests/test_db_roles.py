@@ -39,6 +39,34 @@ RUNTIME = os.environ.get("CONTAINER_RUNTIME") or shutil.which("podman") or shuti
 OWNER, APP, DB = "trilha", "trilha_app", "trilha"
 PROVISION = (DEPLOY / "init" / "01-provision.sh").read_text()
 ROLLBACK = (DEPLOY / "rollback-runtime-role.sh").read_text()
+PARK = (DEPLOY / "park-tables.sh").read_text()
+# The runtime privilege policy of the release before SPEC-0007 slice B (main at f8bc56f), copied
+# here as the "previous release" a rollback below slice B runs (SPEC-0007 SEC-52).
+PREVIOUS_POLICY = {
+    **{
+        table: db_privileges.STANDARD
+        for table in (
+            "accounts_user",
+            "accounts_user_groups",
+            "accounts_user_user_permissions",
+            "assets_asset",
+            "auth_group",
+            "auth_group_permissions",
+            "auth_permission",
+            "django_content_type",
+            "django_session",
+            "rbac_platformaccess",
+            "rbac_role",
+            "rbac_role_permissions",
+            "rbac_roleassignment",
+            "teams_membership",
+            "teams_team",
+        )
+    },
+    "audit_auditevent": db_privileges.APPEND_ONLY,
+    "django_migrations": db_privileges.NO_ACCESS,
+}
+PARKED = ("findings_finding", "findings_findinglogentry")
 # deploy/postgres/init/01-create-app-role.sh before SPEC-0013: one role owns and serves everything.
 LEGACY_INIT = """#!/bin/sh
 set -eu
@@ -198,12 +226,13 @@ class Instance:
             text=True,
         )
 
-    def exec_script(self, script, **env):
+    def exec_script(self, script, *args, **env):
         """Runs a deploy script inside the container as `compose exec -T db sh -s` does."""
         options = [part for key, value in env.items() for part in ("-e", f"{key}={value}")]
         return run(
-            RUNTIME, "exec", "-i", *options, self.name, "sh", "-s", input=script, check=False
-        )
+            RUNTIME, "exec", "-i", *options, self.name, "sh", "-s", *args, input=script,
+            check=False,
+        )  # fmt: skip
 
     def provision(self, **overrides):
         return self.exec_script(PROVISION, **self.provisioning_env(**overrides))
@@ -409,6 +438,183 @@ def test_runtime_cannot_alter_drop_or_disable_audit_protection_cwe_693(fresh):
             "SELECT tgenabled FROM pg_trigger WHERE tgname = 'audit_auditevent_append_only'"
         )
         assert trigger.fetchone() == ("O",)
+
+
+# SPEC-0007 SEC-24 / SEC-43 — findings and logbook rows as the runtime role (T-24, T-43)
+
+
+def _finding_rows(instance, django_db_blocker):
+    """A finding and its first logbook entry, written through the ORM as the runtime role."""
+    from apps.assets.models import Asset
+    from apps.audit.context import audit_source
+    from apps.findings.models import Finding, FindingLogEntry
+    from tests.test_assets_security import make_team, make_user
+
+    suffix = uuid.uuid4().hex[:8]
+    with django_connected(instance, APP, django_db_blocker):
+        with audit_source("command"):
+            team = make_team(f"f{suffix}")
+        user = make_user(f"reporter-{suffix}")
+        asset = Asset.objects.create(team=team, name=f"Asset {suffix}", kind="server")
+        finding = Finding.objects.create(
+            asset=asset, title="Probe", category="other", severity="low", reported_by=user,
+            log_sequence=1,
+        )  # fmt: skip
+        entry = FindingLogEntry.objects.create(
+            finding=finding, sequence=1, kind="system", event="finding_created", actor=user
+        )
+        return finding.pk, entry.pk
+
+
+def test_runtime_cannot_update_or_delete_logbook_entries_cwe_471(fresh, django_db_blocker):
+    finding, entry = _finding_rows(fresh, django_db_blocker)
+    with fresh.connect(APP) as app:
+        for statement in (
+            "UPDATE findings_findinglogentry SET event = 'assigned' WHERE id = %s",
+            "UPDATE findings_findinglogentry SET body = '', redacted_at = now(),"
+            " redaction_reason = 'secret' WHERE id = %s",  # not even the redaction shape
+            "DELETE FROM findings_findinglogentry WHERE id = %s",
+        ):
+            with pytest.raises(errors.InsufficientPrivilege):
+                app.execute(statement, [entry])
+        with pytest.raises(errors.InsufficientPrivilege):
+            app.execute("TRUNCATE findings_findinglogentry")
+        with pytest.raises(errors.InsufficientPrivilege):  # no row lock on history either
+            app.execute("SELECT id FROM findings_findinglogentry WHERE id = %s FOR UPDATE", [entry])
+        with app.transaction(force_rollback=True):  # appending works
+            app.execute(
+                "INSERT INTO findings_findinglogentry (id, finding_id, sequence, kind, event, body,"
+                " metadata, created_at) VALUES (gen_random_uuid(), %s, 2, 'system', 'probe', '',"
+                " '{}', now())",
+                [finding],
+            )
+        stored = app.execute(
+            "SELECT event, body FROM findings_findinglogentry WHERE id = %s", [entry]
+        ).fetchone()
+        assert stored == ("finding_created", "")
+
+
+def test_database_error_logs_exclude_row_content_cwe_532(fresh, django_db_blocker):
+    from django.db import IntegrityError
+
+    from apps.findings.models import Finding, FindingLogEntry
+
+    finding, _ = _finding_rows(fresh, django_db_blocker)
+    app_marker, owner_marker = f"APP-{secrets.token_hex(8)}", f"OWNER-{secrets.token_hex(8)}"
+    with django_connected(fresh, APP, django_db_blocker):
+        row = Finding.objects.get(pk=finding)
+        for invalid in (
+            {"kind": "comment", "actor": None, "body": app_marker, "idempotency_key": uuid.uuid4()},
+            {"kind": "system", "event": "finding_updated", "body": app_marker},
+        ):  # violations of logentry_comment_shape and logentry_system_shape, with the body bound
+            with pytest.raises(IntegrityError):
+                FindingLogEntry.objects.create(finding=row, sequence=99, **invalid)
+    insert = (
+        "INSERT INTO findings_findinglogentry (id, finding_id, sequence, kind, event, body,"
+        " metadata, created_at) VALUES (gen_random_uuid(), %s, 99, 'system', 'probe', %s, '{}',"
+        " now())"
+    )
+    with fresh.connect(APP) as app, pytest.raises(errors.CheckViolation):
+        psycopg.ClientCursor(app).execute(insert, [finding, app_marker])
+    # Control: the owner keeps PostgreSQL's defaults, so the same failure logs the row content.
+    with fresh.connect(OWNER) as owner, pytest.raises(errors.CheckViolation):
+        psycopg.ClientCursor(owner).execute(insert, [finding, owner_marker])
+    with fresh.connect(APP) as app:
+        for setting in ("log_min_error_statement", "log_error_verbosity"):
+            with pytest.raises(errors.InsufficientPrivilege):
+                app.execute(f"SET {setting} = DEFAULT")
+    deadline = time.monotonic() + 10
+    while owner_marker not in (logs := fresh.logs()) and time.monotonic() < deadline:
+        time.sleep(0.2)
+    assert owner_marker in logs
+    assert (
+        'violates check constraint "logentry_comment_shape"' in logs
+    )  # the error itself is logged
+    assert app_marker not in logs
+    with fresh.connect("postgres") as superuser:
+        settings = superuser.execute(
+            "SELECT s.setconfig FROM pg_db_role_setting s JOIN pg_roles r ON r.oid = s.setrole"
+            " WHERE r.rolname = %s AND s.setdatabase = 0",
+            [APP],
+        ).fetchone()[0]
+        assert sorted(settings) == ["log_error_verbosity=terse", "log_min_error_statement=panic"]
+
+
+def test_emergency_redaction_is_owner_only_one_way_and_audited_cwe_471(fresh, django_db_blocker):
+    from apps.audit.context import audit_source
+    from apps.findings.models import Finding
+    from tests.test_findings_commands import comment
+
+    marker = f"MARKER-{secrets.token_hex(8)}"
+    finding, _ = _finding_rows(fresh, django_db_blocker)
+    with django_connected(fresh, APP, django_db_blocker), audit_source("command"):
+        row = Finding.objects.select_related("reported_by").get(pk=finding)
+        entry = comment(row, row.reported_by, f"token {marker}")
+        spare = comment(row, row.reported_by, f"second {marker}")
+    args = ["redact_logbook_entry", "--finding", str(finding), "--sequence", str(entry.sequence)]
+    args += ["--reason", "secret", "--ticket", "OPS-7"]
+    as_runtime = fresh.manage(*args, "--execute", role=APP, check=False)
+    assert as_runtime.returncode != 0 and "Redaction refused; nothing changed." in as_runtime.stderr
+    dry = fresh.manage(*args, role=OWNER)
+    assert "dry run" in dry.stdout and "kind=comment" in dry.stdout
+    done = fresh.manage(*args, "--execute", role=OWNER)
+    assert f"redacted entry {entry.pk}" in done.stdout
+    again = fresh.manage(*args, "--execute", role=OWNER, check=False)
+    assert again.returncode != 0 and "already redacted" in again.stderr
+    for result in (as_runtime, dry, done, again):
+        assert marker not in result.stdout + result.stderr
+    with fresh.connect(OWNER) as owner:
+        stored = owner.execute(
+            "SELECT body, redaction_reason, redacted_at IS NOT NULL FROM findings_findinglogentry"
+            " WHERE id = %s",
+            [entry.pk],
+        ).fetchone()
+        assert stored == ("", "secret", True)
+        assert owner.execute(
+            "SELECT count(*) FROM audit_auditevent WHERE action = 'findings.logbook_entry_redacted'"
+            " AND resource_id = %s AND actor_label = 'trilha-operator' AND source = 'command'",
+            [str(entry.pk)],
+        ).fetchone() == (1,)
+        # Even the owner cannot reword, restore, re-redact or delete: only the one-way shape, once.
+        for statement in (
+            "UPDATE findings_findinglogentry SET body = 'reworded' WHERE id = %s",
+            "UPDATE findings_findinglogentry SET redacted_at = NULL, redaction_reason = NULL"
+            " WHERE id = %s",
+            "UPDATE findings_findinglogentry SET redacted_at = now() WHERE id = %s",
+            "DELETE FROM findings_findinglogentry WHERE id = %s",
+        ):
+            with pytest.raises(errors.RestrictViolation):
+                owner.execute(statement, [entry.pk])
+        with pytest.raises(errors.RestrictViolation):
+            owner.execute("DELETE FROM findings_findinglogentry WHERE id = %s", [spare.pk])
+    # The superuser is not the table owner: the trigger refuses the redaction shape for it too.
+    with fresh.connect("postgres") as superuser:
+        with pytest.raises(errors.RestrictViolation):
+            superuser.execute(
+                "UPDATE findings_findinglogentry SET body = '', redacted_at = now(),"
+                " redaction_reason = 'secret' WHERE id = %s",
+                [spare.pk],
+            )
+    assert marker not in fresh.logs()
+
+
+def test_runtime_cannot_delete_findings_or_lifecycle_rows_cwe_471(fresh, django_db_blocker):
+    finding, _ = _finding_rows(fresh, django_db_blocker)
+    with fresh.connect(APP) as app:
+        with pytest.raises(errors.InsufficientPrivilege):
+            app.execute("DELETE FROM findings_finding WHERE id = %s", [finding])
+        with pytest.raises(errors.InsufficientPrivilege):
+            app.execute("TRUNCATE findings_finding")
+        with app.transaction(force_rollback=True):  # updatable: edits and row locks work
+            app.execute("SELECT id FROM findings_finding WHERE id = %s FOR UPDATE", [finding])
+            app.execute(
+                "UPDATE findings_finding SET version = version + 1 WHERE id = %s", [finding]
+            )
+        assert app.execute(
+            "SELECT count(*) FROM findings_finding WHERE id = %s", [finding]
+        ).fetchone() == (1,)
+    assert db_privileges.TABLE_PRIVILEGES["findings_finding"] == ("SELECT", "INSERT", "UPDATE")
+    assert db_privileges.TABLE_PRIVILEGES["findings_findinglogentry"] == ("SELECT", "INSERT")
 
 
 # SEC-04 / SEC-05 / SEC-06 / SEC-10 — DDL, escalation, other databases (T-04-T-06, T-10)
@@ -914,3 +1120,163 @@ def test_rollback_and_real_restore_recover_service_on_disposable_instances(
             app.execute("UPDATE audit_auditevent SET actor_label = 'forged'")
     finally:
         target.remove()
+
+
+# SPEC-0007 SEC-52 / AC-B5 — park and unpark for a code rollback below slice B (T-52)
+
+
+def _parked_tables(connection):
+    return connection.execute(
+        "SELECT n.nspname, c.relname, pg_get_userbyid(c.relowner) FROM pg_class c"
+        " JOIN pg_namespace n ON n.oid = c.relnamespace"
+        " WHERE c.relkind = 'r' AND c.relname = ANY (%s) ORDER BY 2",
+        [list(PARKED)],
+    ).fetchall()
+
+
+def _content(connection, schema):
+    """Row count and a digest of every column of every row, per table."""
+    return {
+        table: connection.execute(
+            sql.SQL(
+                "SELECT count(*), md5(coalesce(string_agg(t::text, '|' ORDER BY t.id), ''))"
+                " FROM {}.{} t"
+            ).format(sql.Identifier(schema), sql.Identifier(table))
+        ).fetchone()
+        for table in PARKED
+    }
+
+
+def _structure(connection):
+    return connection.execute(
+        "SELECT r.relname, (SELECT count(*) FROM pg_constraint WHERE conrelid = r.oid),"
+        " (SELECT count(*) FROM pg_index WHERE indrelid = r.oid),"
+        " (SELECT string_agg(tgname || ':' || tgenabled::text, ',') FROM pg_trigger"
+        "  WHERE tgrelid = r.oid AND NOT tgisinternal)"
+        " FROM pg_class r WHERE r.relkind = 'r' AND r.relname = ANY (%s) ORDER BY 1",
+        [list(PARKED)],
+    ).fetchall()
+
+
+def test_rollback_park_and_restore_preserve_rows_and_least_privilege_cwe_732(
+    tmp_path_factory, django_db_blocker
+):
+    from apps.audit.context import audit_source
+    from apps.findings.models import Finding
+    from tests.test_findings_commands import comment
+
+    instance = Instance(tmp_path_factory.mktemp("park"))
+    try:
+        assert "db_grants_applied" in instance.manage("db_migrate").stdout
+        finding, _ = _finding_rows(instance, django_db_blocker)
+        _finding_rows(instance, django_db_blocker)
+        with django_connected(instance, APP, django_db_blocker), audit_source("command"):
+            row = Finding.objects.select_related("reported_by").get(pk=finding)
+            comment(row, row.reported_by, "kept byte for byte")
+        with instance.connect("postgres") as superuser:
+            content, structure = _content(superuser, "public"), _structure(superuser)
+        assert content["findings_finding"][0] == 2 and content["findings_findinglogentry"][0] == 3
+
+        # Unknown slices and actions are refused before anything happens.
+        for args in (("park", "assets"), ("park",), ("drop", "findings"), ()):
+            refused = instance.exec_script(PARK, *args)
+            assert refused.returncode != 0, args
+        with instance.connect("postgres") as superuser:
+            assert {row[0] for row in _parked_tables(superuser)} == {"public"}
+
+        parked = instance.exec_script(PARK, "park", "findings")
+        assert parked.returncode == 0, parked.stderr
+        assert "parked: findings_finding (2 rows)" in parked.stderr
+        again = instance.exec_script(PARK, "park", "findings")
+        assert again.returncode == 0 and "already parked" in again.stderr
+        with instance.connect("postgres") as superuser:
+            assert _parked_tables(superuser) == [
+                ("trilha_parked", "findings_finding", OWNER),
+                ("trilha_parked", "findings_findinglogentry", OWNER),
+            ]
+            assert _content(superuser, "trilha_parked") == content
+            assert _structure(superuser) == structure  # constraints, indexes, trigger moved too
+            public_grants = (
+                superuser.execute(
+                    "SELECT count(*) FROM pg_namespace n, aclexplode(n.nspacl) a"
+                    " WHERE n.nspname = 'trilha_parked' AND a.grantee <> n.nspowner"
+                ).fetchone()[0]
+                + superuser.execute(
+                    "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace,"
+                    " aclexplode(c.relacl) a WHERE n.nspname = 'trilha_parked'"
+                    " AND a.grantee <> c.relowner"
+                ).fetchone()[0]
+            )
+            assert public_grants == 0  # neither the runtime role nor PUBLIC
+        with instance.connect(APP) as app:
+            assert app.execute(
+                "SELECT has_schema_privilege('trilha_parked', 'USAGE')"
+            ).fetchone() == (False,)
+            for table in PARKED:
+                with pytest.raises(errors.InsufficientPrivilege):
+                    app.execute(
+                        sql.SQL("SELECT 1 FROM trilha_parked.{}").format(sql.Identifier(table))
+                    )
+
+        # The previous release's db_migrate passes and grants nothing on the parked tables; this
+        # release's would refuse until they are back.
+        with instance.connect(OWNER) as owner:
+            cursor = owner.cursor()
+            assert db_privileges.refusal_reasons(cursor, APP, PREVIOUS_POLICY) == []
+            with owner.transaction():
+                db_privileges.apply(cursor, APP, PREVIOUS_POLICY)
+            assert db_privileges.drift(cursor, APP, PREVIOUS_POLICY) == []
+            assert (
+                "classified tables that do not exist: findings_finding, findings_findinglogentry"
+                in db_privileges.refusal_reasons(cursor, APP)
+            )
+        with instance.connect(APP) as app, pytest.raises(errors.InsufficientPrivilege):
+            app.execute("SELECT 1 FROM trilha_parked.findings_findinglogentry")
+
+        # Partial states and foreign objects are refused with nothing changed.
+        with instance.connect("postgres") as superuser:
+            superuser.execute("ALTER TABLE trilha_parked.findings_finding SET SCHEMA public")
+            for action in ("park", "unpark"):
+                partial = instance.exec_script(PARK, action, "findings")
+                assert partial.returncode != 0 and "partial or unknown state" in partial.stderr
+            superuser.execute("ALTER TABLE public.findings_finding SET SCHEMA trilha_parked")
+            superuser.execute("CREATE TABLE trilha_parked.stray (id int)")
+            stray = instance.exec_script(PARK, "unpark", "findings")
+            assert stray.returncode != 0 and "other object" in stray.stderr
+            superuser.execute("DROP TABLE trilha_parked.stray")
+            assert {row[0] for row in _parked_tables(superuser)} == {"trilha_parked"}
+
+        # Backups taken while parked list, count and verify the parked tables (AC-B5).
+        backups = tmp_path_factory.mktemp("park-backups")
+        result = backup(instance, backups)
+        assert result.returncode == 0, result.stderr
+        manifest = next(backups.glob("*.manifest")).read_text()
+        assert f"trilha_parked.findings_finding|{OWNER}|" in manifest
+        assert any(
+            line.startswith("trilha_parked.findings_findinglogentry|") and line.endswith("|3")
+            for line in manifest.splitlines()
+        )
+        verified = restore_verify(next(backups.glob("*.dump")))
+        assert verified.returncode == 0, verified.stdout + verified.stderr
+        assert "PASS  parked_tables_private" in verified.stdout
+        assert "PASS  manifest" in verified.stdout
+
+        # Roll forward: unpark, then this release's db_migrate re-applies the classes, no drift.
+        unparked = instance.exec_script(PARK, "unpark", "findings")
+        assert unparked.returncode == 0, unparked.stderr
+        assert "unparked: findings_findinglogentry (3 rows)" in unparked.stderr
+        again = instance.exec_script(PARK, "unpark", "findings")
+        assert again.returncode == 0 and "already in public" in again.stderr
+        assert "db_grants_applied" in instance.manage("db_migrate").stdout
+        with instance.connect("postgres") as superuser:
+            assert {row[0] for row in _parked_tables(superuser)} == {"public"}
+            assert superuser.execute(
+                "SELECT count(*) FROM pg_namespace WHERE nspname = 'trilha_parked'"
+            ).fetchone() == (0,)
+            assert _content(superuser, "public") == content
+            assert _structure(superuser) == structure
+        with instance.connect(OWNER) as owner:
+            assert db_privileges.drift(owner.cursor(), APP) == []
+        _finding_rows(instance, django_db_blocker)  # the runtime role works with them again
+    finally:
+        instance.remove()

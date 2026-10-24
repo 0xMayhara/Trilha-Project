@@ -12,6 +12,13 @@ SUPPORTED_PERMISSIONS = {
     "assets.change_asset": ("change_asset", "assets", "asset"),
     "assets.retire_asset": ("retire_asset", "assets", "asset"),
     "assets.transfer_asset": ("transfer_asset", "assets", "asset"),
+    # SPEC-0007: bound to the membership of the finding's asset's current team.
+    "findings.view_finding": ("view_finding", "findings", "finding"),
+    "findings.add_finding": ("add_finding", "findings", "finding"),
+    "findings.change_finding": ("change_finding", "findings", "finding"),
+    "findings.comment_finding": ("comment_finding", "findings", "finding"),
+    "findings.work_finding": ("work_finding", "findings", "finding"),
+    "findings.override_priority": ("override_priority", "findings", "finding"),
 }
 PERMISSION_CODES = {key: code for code, key in SUPPORTED_PERMISSIONS.items()}
 

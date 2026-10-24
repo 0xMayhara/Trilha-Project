@@ -196,3 +196,25 @@ class DatabaseCredentialTests(unittest.TestCase):
             policy.check_database_credentials({"db": {"environment": {}}}),
             ["db: provisioning roles and passwords must be configured"],
         )
+
+
+class DigestKeyTests(unittest.TestCase):
+    """SPEC-0007 SEC-53: the audit digest key ring is present only in the backend environment."""
+
+    def test_only_backend_receives_the_digest_key_ring(self):
+        ring = {"AUDIT_DIGEST_KEYS": "k1:secret", "AUDIT_DIGEST_ACTIVE_KEY_ID": "k1"}
+        services = {"backend": {"environment": dict(ring)}, "worker": {}, "migrate": {}}
+        self.assertEqual(policy.check_digest_keys(services), [])
+        for name in ("worker", "migrate", "db"):
+            with self.subTest(service=name):
+                leaked = {**services, name: {"environment": {"AUDIT_DIGEST_KEYS": "k1:secret"}}}
+                self.assertEqual(
+                    policy.check_digest_keys(leaked),
+                    [f"{name}: must not receive the audit digest key ring"],
+                )
+        for missing in ({}, {"AUDIT_DIGEST_KEYS": "k1:secret"}, {"AUDIT_DIGEST_KEYS": ""}):
+            with self.subTest(missing=missing):
+                self.assertEqual(
+                    policy.check_digest_keys({"backend": {"environment": missing}}),
+                    ["backend: must receive the audit digest key ring"],
+                )

@@ -32,7 +32,8 @@ UPDATE_FIELDS = {
     "version": (int,),
 }
 TRANSITION_FIELDS = {"version": (int,)}
-TRANSFER_FIELDS = {"version": (int,), "team_id": _TEXT}
+# finding_count is optional and ignored for assets without findings (SPEC-0007 BR-16).
+TRANSFER_FIELDS = {"version": (int,), "team_id": _TEXT, "finding_count": (int,)}
 LIST_FILTERS = ("status", "team", "kind", "environment", "criticality", "ip", "q")
 
 

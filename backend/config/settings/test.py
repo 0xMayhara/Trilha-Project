@@ -1,10 +1,16 @@
 """Test settings: production-like (DEBUG off), local test database defaults."""
 
+import base64
 import os
+import secrets
 
 from django.core.management.utils import get_random_secret_key
 
 os.environ.setdefault("DJANGO_SECRET_KEY", get_random_secret_key())
+os.environ.setdefault(
+    "AUDIT_DIGEST_KEYS", "test:" + base64.urlsafe_b64encode(secrets.token_bytes(32)).decode()
+)
+os.environ.setdefault("AUDIT_DIGEST_ACTIVE_KEY_ID", "test")
 os.environ.setdefault("POSTGRES_DB", "trilha")
 os.environ.setdefault("POSTGRES_USER", "trilha")
 os.environ.setdefault("POSTGRES_PASSWORD", "trilha-test")

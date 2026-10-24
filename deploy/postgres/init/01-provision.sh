@@ -45,6 +45,11 @@ ALTER ROLE :"owner" WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION
     PASSWORD :'owner_password';
 ALTER ROLE :"runtime" WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
     NOINHERIT PASSWORD :'runtime_password';
+-- A failed statement of the runtime role is logged without its text, DETAIL or "failing row"
+-- (SPEC-0007 SEC-45): Django binds parameters client-side, so both would carry user content such
+-- as logbook comments. Superuser-only settings, so the runtime role cannot override them.
+ALTER ROLE :"runtime" SET log_min_error_statement = 'panic';
+ALTER ROLE :"runtime" SET log_error_verbosity = 'terse';
 -- Neither role may hold another role's authority, whoever granted it.
 SELECT format('REVOKE %I FROM %I GRANTED BY %I', granted.rolname, member.rolname, grantor.rolname)
 FROM pg_auth_members m

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Enforce container hardening rules (SPEC-0001 SEC-16, SEC-17) and the database credential split
-(SPEC-0013 SEC-12).
+(SPEC-0013 SEC-12), and keep the audit digest keys in the backend alone (SPEC-0007 SEC-53).
 
 Usage:
     docker compose --env-file .env.example config --format json \
@@ -96,6 +96,22 @@ def check_database_credentials(services: dict) -> list[str]:
     return errors
 
 
+DIGEST_KEY_VARIABLES = ("AUDIT_DIGEST_KEYS", "AUDIT_DIGEST_ACTIVE_KEY_ID")
+
+
+def check_digest_keys(services: dict) -> list[str]:
+    """Only the backend signs and verifies audit content digests, so only it holds their keys."""
+    errors = []
+    for name, service in sorted(services.items()):
+        environment = (service or {}).get("environment") or {}
+        present = [variable for variable in DIGEST_KEY_VARIABLES if environment.get(variable)]
+        if name == "backend" and len(present) != len(DIGEST_KEY_VARIABLES):
+            errors.append("backend: must receive the audit digest key ring")
+        elif name != "backend" and present:
+            errors.append(f"{name}: must not receive the audit digest key ring")
+    return errors
+
+
 def check_dockerfile(name: str, text: str) -> list[str]:
     errors: list[str] = []
     stages: set[str] = set()
@@ -144,6 +160,7 @@ def main() -> int:
     errors = check_services(config, args.dev)
     if config.get("services"):
         errors += check_database_credentials(config["services"])
+        errors += check_digest_keys(config["services"])
     errors += check_dockerfiles(tracked_dockerfiles())
     for error in errors:
         print(f"policy violation: {error}", file=sys.stderr)
