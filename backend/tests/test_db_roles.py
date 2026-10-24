@@ -465,6 +465,64 @@ def test_runtime_cannot_update_or_delete_logbook_entries_cwe_471(fresh, django_d
         assert stored == ("finding_created", "")
 
 
+def test_emergency_redaction_is_owner_only_one_way_and_audited_cwe_471(fresh, django_db_blocker):
+    from apps.audit.context import audit_source
+    from apps.findings.models import Finding
+    from tests.test_findings_commands import comment
+
+    marker = f"MARKER-{secrets.token_hex(8)}"
+    finding, _ = _finding_rows(fresh, django_db_blocker)
+    with django_connected(fresh, APP, django_db_blocker), audit_source("command"):
+        row = Finding.objects.select_related("reported_by").get(pk=finding)
+        entry = comment(row, row.reported_by, f"token {marker}")
+        spare = comment(row, row.reported_by, f"second {marker}")
+    args = ["redact_logbook_entry", "--finding", str(finding), "--sequence", str(entry.sequence)]
+    args += ["--reason", "secret", "--ticket", "OPS-7"]
+    as_runtime = fresh.manage(*args, "--execute", role=APP, check=False)
+    assert as_runtime.returncode != 0 and "Redaction refused; nothing changed." in as_runtime.stderr
+    dry = fresh.manage(*args, role=OWNER)
+    assert "dry run" in dry.stdout and "kind=comment" in dry.stdout
+    done = fresh.manage(*args, "--execute", role=OWNER)
+    assert f"redacted entry {entry.pk}" in done.stdout
+    again = fresh.manage(*args, "--execute", role=OWNER, check=False)
+    assert again.returncode != 0 and "already redacted" in again.stderr
+    for result in (as_runtime, dry, done, again):
+        assert marker not in result.stdout + result.stderr
+    with fresh.connect(OWNER) as owner:
+        stored = owner.execute(
+            "SELECT body, redaction_reason, redacted_at IS NOT NULL FROM findings_findinglogentry"
+            " WHERE id = %s",
+            [entry.pk],
+        ).fetchone()
+        assert stored == ("", "secret", True)
+        assert owner.execute(
+            "SELECT count(*) FROM audit_auditevent WHERE action = 'findings.logbook_entry_redacted'"
+            " AND resource_id = %s AND actor_label = 'trilha-operator' AND source = 'command'",
+            [str(entry.pk)],
+        ).fetchone() == (1,)
+        # Even the owner cannot reword, restore, re-redact or delete: only the one-way shape, once.
+        for statement in (
+            "UPDATE findings_findinglogentry SET body = 'reworded' WHERE id = %s",
+            "UPDATE findings_findinglogentry SET redacted_at = NULL, redaction_reason = NULL"
+            " WHERE id = %s",
+            "UPDATE findings_findinglogentry SET redacted_at = now() WHERE id = %s",
+            "DELETE FROM findings_findinglogentry WHERE id = %s",
+        ):
+            with pytest.raises(errors.RestrictViolation):
+                owner.execute(statement, [entry.pk])
+        with pytest.raises(errors.RestrictViolation):
+            owner.execute("DELETE FROM findings_findinglogentry WHERE id = %s", [spare.pk])
+    # The superuser is not the table owner: the trigger refuses the redaction shape for it too.
+    with fresh.connect("postgres") as superuser:
+        with pytest.raises(errors.RestrictViolation):
+            superuser.execute(
+                "UPDATE findings_findinglogentry SET body = '', redacted_at = now(),"
+                " redaction_reason = 'secret' WHERE id = %s",
+                [spare.pk],
+            )
+    assert marker not in fresh.logs()
+
+
 def test_runtime_cannot_delete_findings_or_lifecycle_rows_cwe_471(fresh, django_db_blocker):
     finding, _ = _finding_rows(fresh, django_db_blocker)
     with fresh.connect(APP) as app:
