@@ -12,7 +12,7 @@ from collections import Counter
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.audit.digests import MISMATCH, UNVERIFIABLE, VALID, verify_digest
-from apps.audit.models import AuditEvent
+from apps.audit.selectors import resource_events
 from apps.findings.models import Finding, FindingLogEntry
 from apps.findings.services import DIGEST_CONTEXT
 
@@ -43,9 +43,6 @@ class Command(BaseCommand):
         parser.add_argument("--finding", help="limit to one finding UUID")
 
     def handle(self, *args, **options):
-        events = AuditEvent.objects.filter(
-            resource_type__in=("findings.finding", "findings.findinglogentry")
-        )
         finding = options.get("finding")
         if finding:
             try:
@@ -60,9 +57,11 @@ class Command(BaseCommand):
             if outcome == UNVERIFIABLE:
                 keys.add(key_id)
 
-        added = events.filter(action="findings.comment_added").order_by("id")
-        if finding:
-            added = added.filter(metadata__finding_id=finding)
+        added = resource_events(
+            actions=("findings.comment_added",),
+            resource_type="findings.findinglogentry",
+            metadata={"finding_id": finding} if finding else None,
+        )
         for batch in _batches(added.values("resource_id", "metadata").iterator()):
             entries = _by_text_id(FindingLogEntry, [row["resource_id"] for row in batch])
             for row in batch:
@@ -74,15 +73,13 @@ class Command(BaseCommand):
                 else:
                     tally(comments, entry.body, row["metadata"].get("body_digest"))
 
-        changed = events.filter(
-            action__in=("findings.finding_created", "findings.finding_updated")
-        ).order_by("resource_id", "-id")
-        if finding:
-            changed = changed.filter(resource_id=finding)
-        latest = {}
+        changed = resource_events(
+            actions=("findings.finding_created", "findings.finding_updated"),
+            resource_type="findings.finding",
+            resource_id=finding or None,
+        )
+        latest = {}  # oldest first, so the last digest seen per finding is the current one
         for row in changed.values("resource_id", "action", "changes", "metadata").iterator():
-            if row["resource_id"] in latest:
-                continue
             if row["action"] == "findings.finding_created":
                 latest[row["resource_id"]] = row["metadata"].get("description_digest")
             elif "description_digest" in row["changes"]:
