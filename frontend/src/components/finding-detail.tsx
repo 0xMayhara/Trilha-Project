@@ -1,7 +1,7 @@
 "use client";
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { FindingForm } from "@/components/finding-form";
 import { FindingAsset, FindingFacts } from "@/components/finding-table";
@@ -24,7 +24,7 @@ import {
 
 const BUTTON = "rounded border border-neutral-400 px-3 py-1 text-sm disabled:opacity-60";
 
-function Logbook({ userId, id }: { userId: string; id: string }) {
+function Logbook({ userId, id, onLost }: { userId: string; id: string; onLost: () => void }) {
   const client = useQueryClient();
   // Read-only in slice B: the latest page, then earlier pages on request. No polling yet.
   const logbook = useInfiniteQuery({
@@ -35,8 +35,12 @@ function Logbook({ userId, id }: { userId: string; id: string }) {
     staleTime: 0,
   });
   useEffect(() => {
-    if (logbook.error) void handleFindingError(client, logbook.error, { userId, id });
-  }, [logbook.error, client, userId, id]);
+    const error = logbook.error;
+    if (!error) return;
+    void handleFindingError(client, error, { userId, id }).then(() => {
+      if (lostAccess(error)) onLost();
+    });
+  }, [logbook.error, client, userId, id, onLost]);
   if (logbook.isPending) return <p role="status">Loading logbook...</p>;
   if (logbook.isError) return <p role="alert">{findingErrorMessage(logbook.error)}</p>;
   const entries = [...logbook.data.pages].reverse().flatMap((page) => page.results);
@@ -56,12 +60,15 @@ function Logbook({ userId, id }: { userId: string; id: string }) {
 export function FindingDetail({ id }: { id: string }) {
   const client = useQueryClient();
   const [editing, setEditing] = useState(false);
+  // After a 403/404 the finding's queries are removed and stay disabled: no refetch, no stale copy.
+  const [lost, setLost] = useState(false);
+  const markLost = useCallback(() => setLost(true), []);
   const { data: user } = useQuery({ queryKey: SESSION_QUERY_KEY, queryFn: fetchSessionUser });
   const userId = user?.id ?? "";
   const finding = useQuery({
     queryKey: findingKey(userId, id),
     queryFn: ({ signal }) => fetchFinding(id, signal),
-    enabled: Boolean(user),
+    enabled: Boolean(user) && !lost,
     staleTime: 0,
   });
   // Every edit sends the version shown on screen; the server rejects stale ones with 409.
@@ -73,13 +80,21 @@ export function FindingDetail({ id }: { id: string }) {
       await client.invalidateQueries({ queryKey: logbookKey(userId, id) });
       setEditing(false);
     },
-    onError: (error) => handleFindingError(client, error, { userId, id }),
+    onError: (error) => {
+      if (lostAccess(error)) markLost();
+      return handleFindingError(client, error, { userId, id });
+    },
   });
   useEffect(() => {
-    if (finding.error) void handleFindingError(client, finding.error, { userId, id });
-  }, [finding.error, client, userId, id]);
+    const error = finding.error;
+    if (!error) return;
+    void handleFindingError(client, error, { userId, id }).then(() => {
+      if (lostAccess(error)) markLost();
+    });
+  }, [finding.error, client, userId, id, markLost]);
 
   if (!user) return null;
+  if (lost) return <p role="alert">You no longer have access to this finding.</p>;
   if (finding.isPending) return <p role="status">Loading finding...</p>;
   if (finding.isError) return <p role="alert">{findingErrorMessage(finding.error)}</p>;
   const current = finding.data;
@@ -110,7 +125,7 @@ export function FindingDetail({ id }: { id: string }) {
           Edit
         </button>
       )}
-      {editing && !lostAccess(save.error) && (
+      {editing && (
         <FindingForm
           finding={current}
           errors={fieldErrors(save.error)}
@@ -120,7 +135,7 @@ export function FindingDetail({ id }: { id: string }) {
         />
       )}
       <FindingAsset finding={current} />
-      <Logbook userId={userId} id={id} />
+      <Logbook userId={userId} id={id} onLost={markLost} />
     </section>
   );
 }
