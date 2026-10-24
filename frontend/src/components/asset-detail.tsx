@@ -27,6 +27,7 @@ import {
   type AssetInput,
 } from "@/lib/assets";
 import { fetchSessionUser, SESSION_QUERY_KEY } from "@/lib/auth";
+import { fetchFindings, findingListKey } from "@/lib/findings";
 
 type Pending = { kind: "retire" } | { kind: "restore" } | { kind: "transfer"; teamId: string; label: string };
 
@@ -48,6 +49,13 @@ export function AssetDetail({ id }: { id: string }) {
     queryKey: accessTeamsKey(userId),
     queryFn: ({ signal }) => fetchAccessTeams(signal),
     enabled: Boolean(user),
+  });
+  // A transfer confirms how many findings move with the asset (SPEC-0007 BR-16).
+  const findings = useQuery({
+    queryKey: findingListKey(userId, { asset: id }, 1),
+    queryFn: ({ signal }) => fetchFindings({ asset: id }, 1, signal),
+    enabled: Boolean(user) && confirming?.kind === "transfer",
+    staleTime: 0,
   });
   // Only editing needs the catalog; reading the asset never does (SPEC-0011 NFR-03).
   const catalog = useQuery({ ...osCatalogQuery, enabled: Boolean(user) && editing });
@@ -88,7 +96,7 @@ export function AssetDetail({ id }: { id: string }) {
     if (!confirming) return;
     if (confirming.kind === "retire") mutation.mutate(() => retireAsset(current));
     else if (confirming.kind === "restore") mutation.mutate(() => restoreAsset(current));
-    else mutation.mutate(() => transferAsset(current, confirming.teamId));
+    else mutation.mutate(() => transferAsset(current, confirming.teamId, findings.data?.count));
   }
 
   return (
@@ -162,10 +170,19 @@ export function AssetDetail({ id }: { id: string }) {
             {confirming.kind === "retire" && "Retire this asset? It leaves the active inventory and becomes read-only."}
             {confirming.kind === "restore" && "Restore this asset to the active inventory?"}
             {confirming.kind === "transfer" &&
-              `Transfer this asset to ${confirming.label}? Members of the current team may lose access to it.`}
+              (findings.data?.count
+                ? `Transfer this asset and its ${findings.data.count} finding(s) to ${confirming.label}? ` +
+                  "The findings and their logbooks move with it; members of the current team lose access to them."
+                : `Transfer this asset to ${confirming.label}? Members of the current team may lose access to it.`)}
           </p>
           <div className="flex gap-2">
-            <button type="button" className={BUTTON} autoFocus disabled={mutation.isPending} onClick={run}>
+            <button
+              type="button"
+              className={BUTTON}
+              autoFocus
+              disabled={mutation.isPending || (confirming.kind === "transfer" && findings.isPending)}
+              onClick={run}
+            >
               Confirm
             </button>
             <button type="button" className={BUTTON} onClick={() => setConfirming(null)}>

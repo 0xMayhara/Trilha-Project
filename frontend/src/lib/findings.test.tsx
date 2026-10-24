@@ -8,7 +8,7 @@ import { FindingAsset, FindingFacts, FindingTable } from "@/components/finding-t
 import { LogbookEntries } from "@/components/logbook";
 import { accessPageSchema, accessQueryKey, PERMISSION_CODES } from "@/lib/access";
 import { ApiError } from "@/lib/api-client";
-import { ASSET_QUERY_KEY, assetKey, assetSchema } from "@/lib/assets";
+import { ASSET_QUERY_KEY, assetKey, assetSchema, transferAsset } from "@/lib/assets";
 import { SESSION_QUERY_KEY } from "@/lib/auth";
 import {
   entrySchema,
@@ -229,6 +229,20 @@ describe("findings client contracts", () => {
     expect(canReport(parsed, page(all, other))).toBe(false); // grants in another team
     expect(canReport({ ...parsed, status: "retired" }, page(all))).toBe(false);
     expect(canReport(parsed, undefined)).toBe(false);
+  });
+
+  it("confirms the finding count when transferring an asset", async () => {
+    const parsed = assetSchema.parse({ ...asset, team, hostname: "", ip_addresses: [], operating_system: "",
+      os_product: null, version: 3, created_at: "x", updated_at: "x" });
+    const fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify(parsed)));
+    vi.stubGlobal("fetch", fetch);
+    await transferAsset(parsed, other, 2);
+    await transferAsset(parsed, other);
+    const bodies = fetch.mock.calls.map(([, init]) => JSON.parse(String((init as RequestInit).body)));
+    expect(bodies).toEqual([
+      { version: 3, team_id: other, finding_count: 2 },
+      { version: 3, team_id: other }, // unchanged SPEC-0005 body when no count is known
+    ]);
   });
 
   it("maps errors to fixed messages", () => {

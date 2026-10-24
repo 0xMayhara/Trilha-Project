@@ -192,10 +192,13 @@ export function restoreAsset(asset: Asset) {
   return apiFetch(assetPath(asset.id, "restore/"), assetSchema, { method: "POST", body: { version: asset.version } });
 }
 
-export function transferAsset(asset: Asset, teamId: string) {
+/** `findingCount` confirms how many findings move with the asset (SPEC-0007 BR-16); the server
+ * refuses a transfer of an asset with findings whose count it does not match. */
+export function transferAsset(asset: Asset, teamId: string, findingCount?: number) {
+  const confirmation = findingCount === undefined ? {} : { finding_count: findingCount };
   return apiFetch(assetPath(asset.id, "transfer/"), assetSchema, {
     method: "POST",
-    body: { version: asset.version, team_id: teamId },
+    body: { version: asset.version, team_id: teamId, ...confirmation },
   });
 }
 
