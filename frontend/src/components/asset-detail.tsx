@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { AssetForm } from "@/components/asset-form";
 import { AssetFacts } from "@/components/asset-table";
+import { ReportFinding } from "@/components/finding-report";
 import { ApiError } from "@/lib/api-client";
 import {
   accessTeamsKey,
@@ -129,6 +130,7 @@ export function AssetDetail({ id }: { id: string }) {
           </button>
         )}
       </div>
+      <ReportFinding asset={current} access={access.data} />
       {destinations.length > 0 && (
         <form
           className="flex items-end gap-2 text-sm"

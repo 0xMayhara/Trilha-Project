@@ -8,6 +8,7 @@ import { useEffect } from "react";
 import { clearOwnAccess } from "@/lib/access";
 import { clearAdminQueries, fetchPlatformSelf, platformKey, type PlatformSelf } from "@/lib/admin";
 import { clearAssetQueries } from "@/lib/assets";
+import { clearFindingQueries } from "@/lib/findings";
 
 import {
   authErrorMessage,
@@ -39,6 +40,7 @@ export function AuthNav() {
     if (user === null) {
       void clearOwnAccess(queryClient);
       void clearAssetQueries(queryClient);
+      void clearFindingQueries(queryClient);
       void clearAdminQueries(queryClient);
     }
   }, [user, queryClient]);
@@ -52,6 +54,7 @@ export function AuthNav() {
       }
       await clearOwnAccess(queryClient);
       await clearAssetQueries(queryClient);
+      await clearFindingQueries(queryClient);
       await clearAdminQueries(queryClient);
       queryClient.setQueryData(SESSION_QUERY_KEY, null);
       router.push("/login");
@@ -73,6 +76,7 @@ export function AuthNav() {
       <span className="text-neutral-600">Signed in as {user.username}</span>
       <AdministrationLink platform={platform.data} />
       <Link href="/assets" className="underline">Assets</Link>
+      <Link href="/findings" className="underline">Findings</Link>
       <Link href="/account/access" className="underline">Your access</Link>
       <Link href="/account/password" className="underline">
         Change password
