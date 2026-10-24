@@ -120,6 +120,38 @@ def test_redaction_is_a_dry_run_by_default_and_blanks_one_way_with_execute(world
         redact(world.finding, entry.sequence, "--execute")
 
 
+def _system_entry(finding, event, metadata):
+    with transaction.atomic():
+        locked = Finding.objects.select_for_update().get(pk=finding.pk)
+        locked.log_sequence += 1
+        locked.save(update_fields=["log_sequence"])
+        return FindingLogEntry.objects.create(
+            finding=locked,
+            sequence=locked.log_sequence,
+            kind="system",
+            event=event,
+            metadata=metadata,
+        )
+
+
+def test_redaction_blanks_only_free_text_override_reasons_among_system_entries(world):
+    # Slice D and E entry shapes: a coded reason is not content; an override reason is.
+    coded = _system_entry(world.finding, "work_stopped", {"reason": "reassigned"})
+    with pytest.raises(CommandError, match="Only comments and override reasons"):
+        redact(world.finding, coded.sequence, "--execute")
+    assert FindingLogEntry.objects.get(pk=coded.pk).metadata == {"reason": "reassigned"}
+    override = _system_entry(
+        world.finding, "priority_overridden", {"level": "p3", "reason": "contact +55 11 9999"}
+    )
+    redact(world.finding, override.sequence, "--execute", reason="personal_data")
+    stored = FindingLogEntry.objects.get(pk=override.pk)
+    assert (stored.metadata, stored.body, stored.redaction_reason) == (
+        {"level": "p3"},
+        "",
+        "personal_data",
+    )
+
+
 def test_redaction_refuses_invalid_requests_without_change(world):
     entry = comment(world.finding, world.reporter, "fine")
     before = (

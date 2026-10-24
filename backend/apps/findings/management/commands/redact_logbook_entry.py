@@ -24,6 +24,10 @@ from apps.rbac.locking import bound_lock_waits
 
 logger = logging.getLogger("apps.findings")
 TICKET = re.compile(r"[A-Za-z0-9][A-Za-z0-9._#/-]{0,63}")
+# System entries whose "reason" is free text an actor typed (BR-51); others hold only codes.
+REDACTABLE_EVENTS = frozenset(
+    {"priority_overridden", "priority_override_revalidated", "priority_override_cleared"}
+)
 # Static SQL; the trigger findings_logentry_append_only accepts exactly this shape, once.
 REDACT = (
     "UPDATE findings_findinglogentry SET body = '', metadata = metadata - 'reason',"
@@ -110,6 +114,7 @@ class Command(BaseCommand):
             raise CommandError("No logbook entry has that finding and sequence.")
         if entry.redacted_at is not None:
             raise CommandError("The entry is already redacted.")
-        if entry.kind != LogKind.COMMENT and "reason" not in entry.metadata:
+        override = entry.event in REDACTABLE_EVENTS and "reason" in entry.metadata
+        if entry.kind != LogKind.COMMENT and not override:
             raise CommandError("Only comments and override reasons can be redacted.")
         return entry
