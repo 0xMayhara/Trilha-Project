@@ -20,7 +20,7 @@ from apps.findings.services import DIGEST_CONTEXT
 from tests.test_findings_api import build_world, client_for, detail, logbook
 
 pytestmark = pytest.mark.django_db
-SECRET = "password=correct-horse-7f3a"
+SECRET = "pasted credential marker"  # synthetic: the text a user pasted by mistake
 
 
 @pytest.fixture(autouse=True)
