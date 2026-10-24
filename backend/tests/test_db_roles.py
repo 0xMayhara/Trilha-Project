@@ -411,6 +411,79 @@ def test_runtime_cannot_alter_drop_or_disable_audit_protection_cwe_693(fresh):
         assert trigger.fetchone() == ("O",)
 
 
+# SPEC-0007 SEC-24 / SEC-43 — findings and logbook rows as the runtime role (T-24, T-43)
+
+
+def _finding_rows(instance, django_db_blocker):
+    """A finding and its first logbook entry, written through the ORM as the runtime role."""
+    from apps.assets.models import Asset
+    from apps.audit.context import audit_source
+    from apps.findings.models import Finding, FindingLogEntry
+    from tests.test_assets_security import make_team, make_user
+
+    suffix = uuid.uuid4().hex[:8]
+    with django_connected(instance, APP, django_db_blocker):
+        with audit_source("command"):
+            team = make_team(f"f{suffix}")
+        user = make_user(f"reporter-{suffix}")
+        asset = Asset.objects.create(team=team, name=f"Asset {suffix}", kind="server")
+        finding = Finding.objects.create(
+            asset=asset, title="Probe", category="other", severity="low", reported_by=user,
+            log_sequence=1,
+        )  # fmt: skip
+        entry = FindingLogEntry.objects.create(
+            finding=finding, sequence=1, kind="system", event="finding_created", actor=user
+        )
+        return finding.pk, entry.pk
+
+
+def test_runtime_cannot_update_or_delete_logbook_entries_cwe_471(fresh, django_db_blocker):
+    finding, entry = _finding_rows(fresh, django_db_blocker)
+    with fresh.connect(APP) as app:
+        for statement in (
+            "UPDATE findings_findinglogentry SET event = 'assigned' WHERE id = %s",
+            "UPDATE findings_findinglogentry SET body = '', redacted_at = now(),"
+            " redaction_reason = 'secret' WHERE id = %s",  # not even the redaction shape
+            "DELETE FROM findings_findinglogentry WHERE id = %s",
+        ):
+            with pytest.raises(errors.InsufficientPrivilege):
+                app.execute(statement, [entry])
+        with pytest.raises(errors.InsufficientPrivilege):
+            app.execute("TRUNCATE findings_findinglogentry")
+        with pytest.raises(errors.InsufficientPrivilege):  # no row lock on history either
+            app.execute("SELECT id FROM findings_findinglogentry WHERE id = %s FOR UPDATE", [entry])
+        with app.transaction(force_rollback=True):  # appending works
+            app.execute(
+                "INSERT INTO findings_findinglogentry (id, finding_id, sequence, kind, event, body,"
+                " metadata, created_at) VALUES (gen_random_uuid(), %s, 2, 'system', 'probe', '',"
+                " '{}', now())",
+                [finding],
+            )
+        stored = app.execute(
+            "SELECT event, body FROM findings_findinglogentry WHERE id = %s", [entry]
+        ).fetchone()
+        assert stored == ("finding_created", "")
+
+
+def test_runtime_cannot_delete_findings_or_lifecycle_rows_cwe_471(fresh, django_db_blocker):
+    finding, _ = _finding_rows(fresh, django_db_blocker)
+    with fresh.connect(APP) as app:
+        with pytest.raises(errors.InsufficientPrivilege):
+            app.execute("DELETE FROM findings_finding WHERE id = %s", [finding])
+        with pytest.raises(errors.InsufficientPrivilege):
+            app.execute("TRUNCATE findings_finding")
+        with app.transaction(force_rollback=True):  # updatable: edits and row locks work
+            app.execute("SELECT id FROM findings_finding WHERE id = %s FOR UPDATE", [finding])
+            app.execute(
+                "UPDATE findings_finding SET version = version + 1 WHERE id = %s", [finding]
+            )
+        assert app.execute(
+            "SELECT count(*) FROM findings_finding WHERE id = %s", [finding]
+        ).fetchone() == (1,)
+    assert db_privileges.TABLE_PRIVILEGES["findings_finding"] == ("SELECT", "INSERT", "UPDATE")
+    assert db_privileges.TABLE_PRIVILEGES["findings_findinglogentry"] == ("SELECT", "INSERT")
+
+
 # SEC-04 / SEC-05 / SEC-06 / SEC-10 — DDL, escalation, other databases (T-04-T-06, T-10)
 
 

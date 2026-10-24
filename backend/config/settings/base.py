@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     "apps.teams",
     "apps.rbac",
     "apps.assets",
+    "apps.findings",
 ]
 
 MIDDLEWARE = [
