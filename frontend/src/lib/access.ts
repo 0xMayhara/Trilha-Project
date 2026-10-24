@@ -12,6 +12,12 @@ export const PERMISSION_CODES = [
   "assets.change_asset",
   "assets.retire_asset",
   "assets.transfer_asset",
+  "findings.view_finding",
+  "findings.add_finding",
+  "findings.change_finding",
+  "findings.comment_finding",
+  "findings.work_finding",
+  "findings.override_priority",
 ] as const;
 export type PermissionCode = (typeof PERMISSION_CODES)[number];
 export const PERMISSION_LABELS: Record<PermissionCode, string> = {
@@ -21,6 +27,12 @@ export const PERMISSION_LABELS: Record<PermissionCode, string> = {
   "assets.change_asset": "Edit assets",
   "assets.retire_asset": "Retire and restore assets",
   "assets.transfer_asset": "Transfer assets",
+  "findings.view_finding": "View findings",
+  "findings.add_finding": "Report findings",
+  "findings.change_finding": "Edit findings",
+  "findings.comment_finding": "Comment on findings",
+  "findings.work_finding": "Work on assigned findings",
+  "findings.override_priority": "Override finding priority",
 };
 
 const teamSchema = z.object({ id: z.uuid(), code: z.string(), name: z.string() });
