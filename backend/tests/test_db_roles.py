@@ -39,6 +39,34 @@ RUNTIME = os.environ.get("CONTAINER_RUNTIME") or shutil.which("podman") or shuti
 OWNER, APP, DB = "trilha", "trilha_app", "trilha"
 PROVISION = (DEPLOY / "init" / "01-provision.sh").read_text()
 ROLLBACK = (DEPLOY / "rollback-runtime-role.sh").read_text()
+PARK = (DEPLOY / "park-tables.sh").read_text()
+# The runtime privilege policy of the release before SPEC-0007 slice B (main at f8bc56f), copied
+# here as the "previous release" a rollback below slice B runs (SPEC-0007 SEC-52).
+PREVIOUS_POLICY = {
+    **{
+        table: db_privileges.STANDARD
+        for table in (
+            "accounts_user",
+            "accounts_user_groups",
+            "accounts_user_user_permissions",
+            "assets_asset",
+            "auth_group",
+            "auth_group_permissions",
+            "auth_permission",
+            "django_content_type",
+            "django_session",
+            "rbac_platformaccess",
+            "rbac_role",
+            "rbac_role_permissions",
+            "rbac_roleassignment",
+            "teams_membership",
+            "teams_team",
+        )
+    },
+    "audit_auditevent": db_privileges.APPEND_ONLY,
+    "django_migrations": db_privileges.NO_ACCESS,
+}
+PARKED = ("findings_finding", "findings_findinglogentry")
 # deploy/postgres/init/01-create-app-role.sh before SPEC-0013: one role owns and serves everything.
 LEGACY_INIT = """#!/bin/sh
 set -eu
@@ -198,12 +226,13 @@ class Instance:
             text=True,
         )
 
-    def exec_script(self, script, **env):
+    def exec_script(self, script, *args, **env):
         """Runs a deploy script inside the container as `compose exec -T db sh -s` does."""
         options = [part for key, value in env.items() for part in ("-e", f"{key}={value}")]
         return run(
-            RUNTIME, "exec", "-i", *options, self.name, "sh", "-s", input=script, check=False
-        )
+            RUNTIME, "exec", "-i", *options, self.name, "sh", "-s", *args, input=script,
+            check=False,
+        )  # fmt: skip
 
     def provision(self, **overrides):
         return self.exec_script(PROVISION, **self.provisioning_env(**overrides))
@@ -1045,3 +1074,163 @@ def test_rollback_and_real_restore_recover_service_on_disposable_instances(
             app.execute("UPDATE audit_auditevent SET actor_label = 'forged'")
     finally:
         target.remove()
+
+
+# SPEC-0007 SEC-52 / AC-B5 — park and unpark for a code rollback below slice B (T-52)
+
+
+def _parked_tables(connection):
+    return connection.execute(
+        "SELECT n.nspname, c.relname, pg_get_userbyid(c.relowner) FROM pg_class c"
+        " JOIN pg_namespace n ON n.oid = c.relnamespace"
+        " WHERE c.relkind = 'r' AND c.relname = ANY (%s) ORDER BY 2",
+        [list(PARKED)],
+    ).fetchall()
+
+
+def _content(connection, schema):
+    """Row count and a digest of every column of every row, per table."""
+    return {
+        table: connection.execute(
+            sql.SQL(
+                "SELECT count(*), md5(coalesce(string_agg(t::text, '|' ORDER BY t.id), ''))"
+                " FROM {}.{} t"
+            ).format(sql.Identifier(schema), sql.Identifier(table))
+        ).fetchone()
+        for table in PARKED
+    }
+
+
+def _structure(connection):
+    return connection.execute(
+        "SELECT r.relname, (SELECT count(*) FROM pg_constraint WHERE conrelid = r.oid),"
+        " (SELECT count(*) FROM pg_index WHERE indrelid = r.oid),"
+        " (SELECT string_agg(tgname || ':' || tgenabled::text, ',') FROM pg_trigger"
+        "  WHERE tgrelid = r.oid AND NOT tgisinternal)"
+        " FROM pg_class r WHERE r.relkind = 'r' AND r.relname = ANY (%s) ORDER BY 1",
+        [list(PARKED)],
+    ).fetchall()
+
+
+def test_rollback_park_and_restore_preserve_rows_and_least_privilege_cwe_732(
+    tmp_path_factory, django_db_blocker
+):
+    from apps.audit.context import audit_source
+    from apps.findings.models import Finding
+    from tests.test_findings_commands import comment
+
+    instance = Instance(tmp_path_factory.mktemp("park"))
+    try:
+        assert "db_grants_applied" in instance.manage("db_migrate").stdout
+        finding, _ = _finding_rows(instance, django_db_blocker)
+        _finding_rows(instance, django_db_blocker)
+        with django_connected(instance, APP, django_db_blocker), audit_source("command"):
+            row = Finding.objects.select_related("reported_by").get(pk=finding)
+            comment(row, row.reported_by, "kept byte for byte")
+        with instance.connect("postgres") as superuser:
+            content, structure = _content(superuser, "public"), _structure(superuser)
+        assert content["findings_finding"][0] == 2 and content["findings_findinglogentry"][0] == 3
+
+        # Unknown slices and actions are refused before anything happens.
+        for args in (("park", "assets"), ("park",), ("drop", "findings"), ()):
+            refused = instance.exec_script(PARK, *args)
+            assert refused.returncode != 0, args
+        with instance.connect("postgres") as superuser:
+            assert {row[0] for row in _parked_tables(superuser)} == {"public"}
+
+        parked = instance.exec_script(PARK, "park", "findings")
+        assert parked.returncode == 0, parked.stderr
+        assert "parked: findings_finding (2 rows)" in parked.stderr
+        again = instance.exec_script(PARK, "park", "findings")
+        assert again.returncode == 0 and "already parked" in again.stderr
+        with instance.connect("postgres") as superuser:
+            assert _parked_tables(superuser) == [
+                ("trilha_parked", "findings_finding", OWNER),
+                ("trilha_parked", "findings_findinglogentry", OWNER),
+            ]
+            assert _content(superuser, "trilha_parked") == content
+            assert _structure(superuser) == structure  # constraints, indexes, trigger moved too
+            public_grants = (
+                superuser.execute(
+                    "SELECT count(*) FROM pg_namespace n, aclexplode(n.nspacl) a"
+                    " WHERE n.nspname = 'trilha_parked' AND a.grantee <> n.nspowner"
+                ).fetchone()[0]
+                + superuser.execute(
+                    "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace,"
+                    " aclexplode(c.relacl) a WHERE n.nspname = 'trilha_parked'"
+                    " AND a.grantee <> c.relowner"
+                ).fetchone()[0]
+            )
+            assert public_grants == 0  # neither the runtime role nor PUBLIC
+        with instance.connect(APP) as app:
+            assert app.execute(
+                "SELECT has_schema_privilege('trilha_parked', 'USAGE')"
+            ).fetchone() == (False,)
+            for table in PARKED:
+                with pytest.raises(errors.InsufficientPrivilege):
+                    app.execute(
+                        sql.SQL("SELECT 1 FROM trilha_parked.{}").format(sql.Identifier(table))
+                    )
+
+        # The previous release's db_migrate passes and grants nothing on the parked tables; this
+        # release's would refuse until they are back.
+        with instance.connect(OWNER) as owner:
+            cursor = owner.cursor()
+            assert db_privileges.refusal_reasons(cursor, APP, PREVIOUS_POLICY) == []
+            with owner.transaction():
+                db_privileges.apply(cursor, APP, PREVIOUS_POLICY)
+            assert db_privileges.drift(cursor, APP, PREVIOUS_POLICY) == []
+            assert (
+                "classified tables that do not exist: findings_finding, findings_findinglogentry"
+                in db_privileges.refusal_reasons(cursor, APP)
+            )
+        with instance.connect(APP) as app, pytest.raises(errors.InsufficientPrivilege):
+            app.execute("SELECT 1 FROM trilha_parked.findings_findinglogentry")
+
+        # Partial states and foreign objects are refused with nothing changed.
+        with instance.connect("postgres") as superuser:
+            superuser.execute("ALTER TABLE trilha_parked.findings_finding SET SCHEMA public")
+            for action in ("park", "unpark"):
+                partial = instance.exec_script(PARK, action, "findings")
+                assert partial.returncode != 0 and "partial or unknown state" in partial.stderr
+            superuser.execute("ALTER TABLE public.findings_finding SET SCHEMA trilha_parked")
+            superuser.execute("CREATE TABLE trilha_parked.stray (id int)")
+            stray = instance.exec_script(PARK, "unpark", "findings")
+            assert stray.returncode != 0 and "other object" in stray.stderr
+            superuser.execute("DROP TABLE trilha_parked.stray")
+            assert {row[0] for row in _parked_tables(superuser)} == {"trilha_parked"}
+
+        # Backups taken while parked list, count and verify the parked tables (AC-B5).
+        backups = tmp_path_factory.mktemp("park-backups")
+        result = backup(instance, backups)
+        assert result.returncode == 0, result.stderr
+        manifest = next(backups.glob("*.manifest")).read_text()
+        assert f"trilha_parked.findings_finding|{OWNER}|" in manifest
+        assert any(
+            line.startswith("trilha_parked.findings_findinglogentry|") and line.endswith("|3")
+            for line in manifest.splitlines()
+        )
+        verified = restore_verify(next(backups.glob("*.dump")))
+        assert verified.returncode == 0, verified.stdout + verified.stderr
+        assert "PASS  parked_tables_private" in verified.stdout
+        assert "PASS  manifest" in verified.stdout
+
+        # Roll forward: unpark, then this release's db_migrate re-applies the classes, no drift.
+        unparked = instance.exec_script(PARK, "unpark", "findings")
+        assert unparked.returncode == 0, unparked.stderr
+        assert "unparked: findings_findinglogentry (3 rows)" in unparked.stderr
+        again = instance.exec_script(PARK, "unpark", "findings")
+        assert again.returncode == 0 and "already in public" in again.stderr
+        assert "db_grants_applied" in instance.manage("db_migrate").stdout
+        with instance.connect("postgres") as superuser:
+            assert {row[0] for row in _parked_tables(superuser)} == {"public"}
+            assert superuser.execute(
+                "SELECT count(*) FROM pg_namespace WHERE nspname = 'trilha_parked'"
+            ).fetchone() == (0,)
+            assert _content(superuser, "public") == content
+            assert _structure(superuser) == structure
+        with instance.connect(OWNER) as owner:
+            assert db_privileges.drift(owner.cursor(), APP) == []
+        _finding_rows(instance, django_db_blocker)  # the runtime role works with them again
+    finally:
+        instance.remove()
