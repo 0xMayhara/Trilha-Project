@@ -123,13 +123,14 @@ export function AuditTable({ entries }: { entries: AuditEntry[] }) {
                   <Badge tone={entry.outcome === "success" ? "ok" : "warn"}>{entry.outcome}</Badge>
                 </Td>
                 <Td className="max-w-80">
-                  <div className="flex items-baseline gap-3">
-                    <span className="truncate text-small" title={summary}>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="min-w-0 truncate text-small" title={summary}>
                       {summary}
                     </span>
                     <Button
                       type="button"
                       variant="link"
+                      className="shrink-0"
                       aria-expanded={isOpen}
                       aria-controls={detailId}
                       aria-label={`${isOpen ? "Hide" : "Show"} details of ${entry.action} at ${when(entry)}`}
