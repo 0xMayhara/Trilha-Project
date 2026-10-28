@@ -1,9 +1,10 @@
 import { AuditTrail } from "@/components/admin/audit";
+import { PageTitle } from "@/components/ui";
 
 export default function AdminAuditPage() {
   return (
     <>
-      <h1 className="text-2xl font-semibold">Audit trail</h1>
+      <PageTitle className="sr-only">Audit trail</PageTitle>
       <AuditTrail />
     </>
   );

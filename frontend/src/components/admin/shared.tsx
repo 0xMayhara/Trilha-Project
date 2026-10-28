@@ -18,12 +18,6 @@ import {
 } from "@/lib/admin";
 import { fetchSessionUser, SESSION_QUERY_KEY } from "@/lib/auth";
 
-export const BUTTON = "rounded border border-neutral-400 px-3 py-1 text-sm disabled:opacity-60";
-export const PRIMARY = "rounded bg-neutral-900 px-3 py-1 text-sm text-white disabled:opacity-60";
-export const INPUT = "rounded border border-neutral-300 px-2 py-1";
-export const CELL = "px-2 py-1";
-export const HEAD = "border-b border-neutral-300 px-2 py-1 font-semibold";
-
 export function useSessionUser() {
   return useQuery({ queryKey: SESSION_QUERY_KEY, queryFn: fetchSessionUser }).data;
 }
