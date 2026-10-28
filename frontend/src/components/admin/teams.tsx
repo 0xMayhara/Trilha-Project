@@ -11,12 +11,12 @@ import {
   ErrorText,
   HEAD,
   INPUT,
-  Pager,
   PRIMARY,
   QueryState,
   useAdminMutation,
   useAdminQuery,
 } from "@/components/admin/shared";
+import { Pager } from "@/components/ui";
 import { positionLabel } from "@/components/admin/users";
 import {
   activateTeam,

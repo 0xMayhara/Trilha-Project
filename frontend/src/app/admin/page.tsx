@@ -1,9 +1,11 @@
 import { AdminOverview } from "@/components/admin/overview";
+import { PageTitle } from "@/components/ui";
 
 export default function AdminPage() {
   return (
     <>
-      <h1 className="text-2xl font-semibold">Administration</h1>
+      {/* The mock shows no visible title under the tabs; the h1 stays for screen readers (SPEC-0017 BR-07). */}
+      <PageTitle className="sr-only">Administration</PageTitle>
       <AdminOverview />
     </>
   );

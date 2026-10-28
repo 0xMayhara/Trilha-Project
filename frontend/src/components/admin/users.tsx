@@ -13,13 +13,13 @@ import {
   HEAD,
   INPUT,
   OneTimeLink,
-  Pager,
   PRIMARY,
   QueryState,
   useAdminMutation,
   useAdminQuery,
   useSessionUser,
 } from "@/components/admin/shared";
+import { Pager } from "@/components/ui";
 import {
   createUser,
   disableUser,

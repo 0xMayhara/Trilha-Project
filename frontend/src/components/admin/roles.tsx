@@ -10,12 +10,12 @@ import {
   ErrorText,
   HEAD,
   INPUT,
-  Pager,
   PRIMARY,
   QueryState,
   useAdminMutation,
   useAdminQuery,
 } from "@/components/admin/shared";
+import { Pager } from "@/components/ui";
 import { PERMISSION_CODES, PERMISSION_LABELS, type PermissionCode } from "@/lib/access";
 import {
   createRole,

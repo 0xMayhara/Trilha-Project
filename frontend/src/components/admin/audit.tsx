@@ -2,7 +2,8 @@
 
 import { useState, type FormEvent } from "react";
 
-import { BUTTON, CELL, HEAD, INPUT, Pager, QueryState, useAdminQuery } from "@/components/admin/shared";
+import { BUTTON, CELL, HEAD, INPUT, QueryState, useAdminQuery } from "@/components/admin/shared";
+import { Pager } from "@/components/ui";
 import { AUDIT_FILTER_KEYS, fetchAudit, type AuditEntry, type Filters } from "@/lib/admin";
 
 type AuditFilters = Filters<(typeof AUDIT_FILTER_KEYS)[number]>;
