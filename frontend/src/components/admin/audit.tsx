@@ -102,7 +102,7 @@ export function AuditTable({ entries }: { entries: AuditEntry[] }) {
   const [open, setOpen] = useState<string | null>(null);
   return (
     <Table caption="Audit events">
-      <TableHead columns={["When", "Actor", "Action", "Outcome", "Resource", "Details"]} />
+      <TableHead columns={["When", "Actor", "Action", "Outcome", "Details"]} />
       <TableBody>
         {entries.map((entry) => {
           const isOpen = open === entry.event_id;
@@ -121,10 +121,6 @@ export function AuditTable({ entries }: { entries: AuditEntry[] }) {
                 </Td>
                 <Td>
                   <Badge tone={entry.outcome === "success" ? "ok" : "warn"}>{entry.outcome}</Badge>
-                </Td>
-                <Td>
-                  {entry.resource.type || "None"}
-                  {entry.resource.id && <Sub className="font-mono">{entry.resource.id}</Sub>}
                 </Td>
                 <Td className="max-w-80">
                   <div className="flex items-baseline gap-3">
@@ -145,7 +141,7 @@ export function AuditTable({ entries }: { entries: AuditEntry[] }) {
                 </Td>
               </Tr>
               {isOpen && (
-                <DetailRow colSpan={6} id={detailId}>
+                <DetailRow colSpan={5} id={detailId}>
                   <AuditDetail entry={entry} />
                 </DetailRow>
               )}
