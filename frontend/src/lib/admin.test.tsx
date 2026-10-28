@@ -186,7 +186,7 @@ describe("SPEC-0010 administration client", () => {
     expect(JSON.stringify(client.getQueryCache().getAll().map((query) => query.state.data))).not.toContain("canary-token");
     // The panel shows it as a read-only field, with the delivery warning, and nothing else keeps it.
     const panel = renderToStaticMarkup(<OneTimeLink link={link} onDone={() => undefined} />);
-    expect(panel).toMatch(/<input readOnly=""[^>]*value="https:\/\/trilha\.example/);
+    expect(panel).toMatch(/<input[^>]*readOnly=""[^>]*value="https:\/\/trilha\.example/);
     expect(panel).toContain("authorized internal channel");
     expect(panel).toContain("60 minutes");
     const sources = readdirSync(join(process.cwd(), "src/components/admin")).map((file) =>

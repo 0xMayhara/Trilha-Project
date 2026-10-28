@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { StepUpProvider, useStepUp } from "@/components/admin/step-up";
-import { AdminTabs, Button, Notice } from "@/components/ui";
+import { AdminTabs, Button, Field, Input, Notice } from "@/components/ui";
 import {
   ADMIN_QUERY_KEY,
   adminErrorMessage,
@@ -135,26 +135,25 @@ export function OneTimeLink({ link, onDone }: { link: IssuedLink; onDone: () => 
   const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle");
   const minutes = Math.round(link.expires_in_seconds / 60);
   return (
-    <section aria-label="One-time password link" className="space-y-2 rounded border border-amber-500 p-3 text-sm">
-      <p className="font-semibold">Password link (shown only once)</p>
-      <p>
+    <Notice tone="confirm" aria-label="One-time password link">
+      <p className="m-0">
+        <strong>Password link (shown only once)</strong>
+      </p>
+      <p className="m-0">
         Deliver this link only through an authorized internal channel. It works once and expires in {minutes} minutes.
       </p>
-      <label className="flex flex-col gap-1">
-        Link
-        <input
+      <Field label="Link">
+        <Input
           readOnly
           value={link.url}
           autoComplete="off"
           spellCheck={false}
           onFocus={(event) => event.currentTarget.select()}
-          className={`${INPUT} font-mono`}
+          className="font-mono text-[13px]"
         />
-      </label>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          className={BUTTON}
+      </Field>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
           onClick={() => {
             navigator.clipboard.writeText(link.url).then(
               () => setCopy("copied"),
@@ -163,17 +162,16 @@ export function OneTimeLink({ link, onDone }: { link: IssuedLink; onDone: () => 
           }}
         >
           Copy link
-        </button>
-        <button type="button" className={PRIMARY} onClick={onDone}>
+        </Button>
+        <Button variant="primary" onClick={onDone}>
           Done
-        </button>
+        </Button>
         {copy === "copied" && <span role="status">Copied.</span>}
         {copy === "failed" && <span role="alert">Copy failed. Select the field and copy it manually.</span>}
       </div>
-    </section>
+    </Notice>
   );
 }
-
 export const ADMIN_SECTIONS = [
   { href: "/admin", label: "Overview" },
   { href: "/admin/users", label: "Users" },

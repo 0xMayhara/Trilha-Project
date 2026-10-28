@@ -5,21 +5,36 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 
 import {
-  BUTTON,
-  CELL,
   Confirm,
   displayName,
   ErrorText,
-  HEAD,
-  INPUT,
   OneTimeLink,
-  PRIMARY,
   QueryState,
   useAdminMutation,
   useAdminQuery,
   useSessionUser,
 } from "@/components/admin/shared";
-import { Pager } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  buttonClasses,
+  EnabledBadge,
+  Facts,
+  Field,
+  FilterBar,
+  Form,
+  Input,
+  Notice,
+  PageTitle,
+  Pager,
+  Panel,
+  Select,
+  Table,
+  TableBody,
+  TableHead,
+  Td,
+  Tr,
+} from "@/components/ui";
 import {
   createUser,
   disableUser,
@@ -59,34 +74,25 @@ export function positionLabel(value: Position | null) {
 /** Every value is React text, never HTML (SEC-26). */
 export function UserTable({ users }: { users: UserAdmin[] }) {
   return (
-    <table className="w-full border-collapse text-left text-sm">
-      <caption className="sr-only">Users</caption>
-      <thead>
-        <tr>
-          {["User", "Email", "State", "Password", "Position", "Admin"].map((heading) => (
-            <th key={heading} scope="col" className={HEAD}>
-              {heading}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
+    <Table caption="Users">
+      <TableHead columns={["User", "Email", "State", "Password", "Position", "Admin"]} />
+      <TableBody>
         {users.map((user) => (
-          <tr key={user.id} className="border-b border-neutral-100">
-            <td className={CELL}>
-              <Link href={`/admin/users/${user.id}`} className="underline">
-                {displayName(user)}
-              </Link>
-            </td>
-            <td className={CELL}>{user.email || "None"}</td>
-            <td className={CELL}>{user.is_active ? "Enabled" : "Disabled"}</td>
-            <td className={CELL}>{user.password_set ? "Set" : "Pending setup"}</td>
-            <td className={CELL}>{positionLabel(user.position)}</td>
-            <td className={CELL}>{user.is_admin ? "Admin" : "No"}</td>
-          </tr>
+          <Tr key={user.id}>
+            <Td>
+              <Link href={`/admin/users/${user.id}`}>{displayName(user)}</Link>
+            </Td>
+            <Td>{user.email || "None"}</Td>
+            <Td>
+              <EnabledBadge enabled={user.is_active} />
+            </Td>
+            <Td>{user.password_set ? "Set" : user.is_active ? <Badge tone="warn">Pending setup</Badge> : "Pending setup"}</Td>
+            <Td>{positionLabel(user.position)}</Td>
+            <Td>{user.is_admin ? "Admin" : "No"}</Td>
+          </Tr>
         ))}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   );
 }
 
@@ -102,34 +108,32 @@ export function UserList() {
   }
 
   return (
-    <section className="space-y-4" aria-label="Users">
-      <Link href="/admin/users/new" className={`inline-block ${PRIMARY}`}>
-        Create user
-      </Link>
-      <form role="search" aria-label="Filter users" onSubmit={apply} className="flex flex-wrap items-end gap-3 text-sm">
-        <label className="flex flex-col gap-1">
-          Name, username or email
-          <input name="q" maxLength={100} className={INPUT} />
-        </label>
-        <label className="flex flex-col gap-1">
-          State
-          <select name="is_active" className={INPUT} defaultValue="">
+    <section className="flex flex-col gap-6" aria-label="Users">
+      <div>
+        <Link href="/admin/users/new" className={buttonClasses("primary")}>
+          Create user
+        </Link>
+      </div>
+      <FilterBar label="Filter users" onSubmit={apply}>
+        <Field label="Name, username or email">
+          <Input name="q" maxLength={100} className="w-56" />
+        </Field>
+        <Field label="State">
+          <Select name="is_active" defaultValue="" className="w-28">
             <option value="">Any</option>
             <option value="true">Enabled</option>
             <option value="false">Disabled</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          Admin
-          <select name="is_admin" className={INPUT} defaultValue="">
+          </Select>
+        </Field>
+        <Field label="Admin">
+          <Select name="is_admin" defaultValue="" className="w-30">
             <option value="">Any</option>
             <option value="true">Admins</option>
             <option value="false">Not Admins</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          Position
-          <select name="position" className={INPUT} defaultValue="">
+          </Select>
+        </Field>
+        <Field label="Position">
+          <Select name="position" defaultValue="" className="w-30">
             <option value="">Any</option>
             {POSITIONS.map((value) => (
               <option key={value} value={value}>
@@ -137,16 +141,14 @@ export function UserList() {
               </option>
             ))}
             <option value="none">None</option>
-          </select>
-        </label>
-        <button type="submit" className={BUTTON}>
-          Apply filters
-        </button>
-      </form>
+          </Select>
+        </Field>
+        <Button type="submit">Apply filters</Button>
+      </FilterBar>
       <QueryState query={users} label="users" />
       {users.data &&
         (users.data.results.length === 0 ? (
-          <p>No users match.</p>
+          <p className="m-0">No users match.</p>
         ) : (
           <>
             <UserTable users={users.data.results} />
@@ -189,10 +191,8 @@ export function UserCreate() {
 
   if (link) {
     return (
-      <section className="space-y-3" aria-label="User created">
-        <p role="status">
-          Created {link.user.username}. The account has no password until its owner uses the link.
-        </p>
+      <section className="flex flex-col gap-6" aria-label="User created">
+        <Notice tone="success">Created {link.user.username}. The account has no password until its owner uses the link.</Notice>
         <OneTimeLink
           link={link.link}
           onDone={() => {
@@ -206,31 +206,29 @@ export function UserCreate() {
   }
 
   return (
-    <form onSubmit={submit} className="max-w-md space-y-3 text-sm" aria-label="Create user">
-      <label className="flex flex-col gap-1">
-        Username (lowercase letters, digits and . _ @ + -)
-        <input name="username" required maxLength={150} pattern="[a-z0-9._@+\-]+" autoComplete="off" className={INPUT} />
-      </label>
-      <label className="flex flex-col gap-1">
-        First name
-        <input name="first_name" maxLength={150} className={INPUT} />
-      </label>
-      <label className="flex flex-col gap-1">
-        Last name
-        <input name="last_name" maxLength={150} className={INPUT} />
-      </label>
-      <label className="flex flex-col gap-1">
-        Email
-        <input name="email" type="email" maxLength={254} className={INPUT} />
-      </label>
-      <ErrorText error={create.error} />
-      <button type="submit" disabled={create.isPending} className={PRIMARY}>
-        Create user
-      </button>
-    </form>
+    <>
+      <Form onSubmit={submit} aria-label="Create user">
+        <Field label="Username (lowercase letters, digits and . _ @ + -)">
+          <Input name="username" required maxLength={150} pattern="[a-z0-9._@+\-]+" autoComplete="off" />
+        </Field>
+        <Field label="First name">
+          <Input name="first_name" maxLength={150} />
+        </Field>
+        <Field label="Last name">
+          <Input name="last_name" maxLength={150} />
+        </Field>
+        <Field label="Email">
+          <Input name="email" type="email" maxLength={254} />
+        </Field>
+        <ErrorText error={create.error} />
+        <Button type="submit" variant="primary" disabled={create.isPending} className="self-start">
+          Create user
+        </Button>
+      </Form>
+      <p className="m-0 text-small text-ink-muted">After creating, the one-time password link appears on the next screen.</p>
+    </>
   );
 }
-
 type Action = "disable" | "enable" | "link" | "grant" | "revoke";
 
 const ACTION_TEXT: Record<Action, (name: string) => string> = {
@@ -279,37 +277,17 @@ export function UserDetailView({ id }: { id: string }) {
   const self = me?.id === current.id;
 
   return (
-    <section className="space-y-6" aria-label="User">
-      <h1 className="text-2xl font-semibold">{displayName(current)}</h1>
+    <section className="flex flex-col gap-6" aria-label="User">
+      <PageTitle>{displayName(current)}</PageTitle>
       <UserFacts user={current} />
       {link && <OneTimeLink link={link} onDone={() => setLink(null)} />}
       <ErrorText error={action.error} />
-      <div className="flex flex-wrap gap-2">
-        {current.is_active && !self && (
-          <button type="button" className={BUTTON} onClick={() => setConfirming("disable")}>
-            Disable account
-          </button>
-        )}
-        {!current.is_active && (
-          <button type="button" className={BUTTON} onClick={() => setConfirming("enable")}>
-            Enable account
-          </button>
-        )}
-        {current.is_active && (
-          <button type="button" className={BUTTON} onClick={() => setConfirming("link")}>
-            Issue password link
-          </button>
-        )}
-        {current.is_active && !current.is_admin && (
-          <button type="button" className={BUTTON} onClick={() => setConfirming("grant")}>
-            Grant Admin
-          </button>
-        )}
-        {current.is_admin && !self && (
-          <button type="button" className={BUTTON} onClick={() => setConfirming("revoke")}>
-            Revoke Admin
-          </button>
-        )}
+      <div className="flex flex-wrap items-center gap-2">
+        {current.is_active && !self && <Button onClick={() => setConfirming("disable")}>Disable account</Button>}
+        {!current.is_active && <Button onClick={() => setConfirming("enable")}>Enable account</Button>}
+        {current.is_active && <Button onClick={() => setConfirming("link")}>Issue password link</Button>}
+        {current.is_active && !current.is_admin && <Button onClick={() => setConfirming("grant")}>Grant Admin</Button>}
+        {current.is_admin && !self && <Button onClick={() => setConfirming("revoke")}>Revoke Admin</Button>}
       </div>
       {confirming && (
         <Confirm
@@ -327,56 +305,51 @@ export function UserDetailView({ id }: { id: string }) {
 }
 
 export function UserFacts({ user }: { user: UserAdmin }) {
-  const facts: [string, string][] = [
-    ["Username", user.username],
-    ["Email", user.email || "None"],
-    ["State", user.is_active ? "Enabled" : "Disabled"],
-    ["Password", user.password_set ? "Set" : "Pending setup"],
-    ["Position", positionLabel(user.position)],
-    ["Platform Admin", user.is_admin ? "Yes" : "No"],
-    ["Joined", new Date(user.date_joined).toLocaleString()],
-    ["Last login", user.last_login ? new Date(user.last_login).toLocaleString() : "Never"],
-  ];
   return (
-    <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
-      {facts.map(([label, value]) => (
-        <div key={label} className="contents">
-          <dt className="font-semibold">{label}</dt>
-          <dd>{value}</dd>
-        </div>
-      ))}
-    </dl>
+    <Facts
+      items={[
+        ["Username", user.username],
+        ["Email", user.email || "None"],
+        ["State", <EnabledBadge key="state" enabled={user.is_active} />],
+        ["Password", user.password_set ? "Set" : "Pending setup"],
+        ["Position", positionLabel(user.position)],
+        ["Platform Admin", user.is_admin ? "Yes" : "No"],
+        ["Joined", new Date(user.date_joined).toLocaleString()],
+        ["Last login", user.last_login ? new Date(user.last_login).toLocaleString() : "Never"],
+      ]}
+    />
   );
 }
 
 function PositionForm({ user }: { user: UserDetail }) {
   const change = useAdminMutation((value: Position | null) => setPosition(user.id, value));
   return (
-    <form
-      aria-label="Operational position"
-      className="flex items-end gap-2 text-sm"
-      onSubmit={(event) => {
-        event.preventDefault();
-        const value = String(new FormData(event.currentTarget).get("position") ?? "");
-        change.mutate(value === "" ? null : (value as Position));
-      }}
-    >
-      <label className="flex flex-col gap-1">
-        Position (grants no permission by itself)
-        <select name="position" defaultValue={user.position ?? ""} key={user.position ?? ""} className={INPUT}>
-          <option value="">None</option>
-          {POSITIONS.map((value) => (
-            <option key={value} value={value}>
-              {POSITION_LABELS[value]}
-            </option>
-          ))}
-        </select>
-      </label>
-      <button type="submit" className={BUTTON} disabled={change.isPending}>
-        Save position
-      </button>
+    <div className="flex flex-col gap-2">
+      <form
+        aria-label="Operational position"
+        className="flex flex-wrap items-end gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const value = String(new FormData(event.currentTarget).get("position") ?? "");
+          change.mutate(value === "" ? null : (value as Position));
+        }}
+      >
+        <Field label="Position (grants no permission by itself)">
+          <Select name="position" defaultValue={user.position ?? ""} key={user.position ?? ""} className="w-64">
+            <option value="">None</option>
+            {POSITIONS.map((value) => (
+              <option key={value} value={value}>
+                {POSITION_LABELS[value]}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Button type="submit" disabled={change.isPending}>
+          Save position
+        </Button>
+      </form>
       <ErrorText error={change.error} />
-    </form>
+    </div>
   );
 }
 
@@ -385,53 +358,51 @@ function ProfileForm({ user }: { user: UserDetail }) {
     updateUser(user.id, changes),
   );
   return (
-    <form
-      aria-label="Profile"
-      key={`${user.first_name}|${user.last_name}|${user.email}`}
-      className="max-w-md space-y-2 text-sm"
-      onSubmit={(event) => {
-        event.preventDefault();
-        const form = new FormData(event.currentTarget);
-        save.mutate({
-          first_name: String(form.get("first_name") ?? ""),
-          last_name: String(form.get("last_name") ?? ""),
-          email: String(form.get("email") ?? "").trim(),
-        });
-      }}
-    >
-      <h2 className="text-lg font-semibold">Profile</h2>
-      <label className="flex flex-col gap-1">
-        First name
-        <input name="first_name" maxLength={150} defaultValue={user.first_name} className={INPUT} />
-      </label>
-      <label className="flex flex-col gap-1">
-        Last name
-        <input name="last_name" maxLength={150} defaultValue={user.last_name} className={INPUT} />
-      </label>
-      <label className="flex flex-col gap-1">
-        Email
-        <input name="email" type="email" maxLength={254} defaultValue={user.email} className={INPUT} />
-      </label>
-      <ErrorText error={save.error} />
-      {save.isSuccess && <p role="status">Profile saved.</p>}
-      <button type="submit" className={BUTTON} disabled={save.isPending}>
-        Save profile
-      </button>
-    </form>
+    <Panel title="Profile">
+      <Form
+        aria-label="Profile"
+        key={`${user.first_name}|${user.last_name}|${user.email}`}
+        onSubmit={(event) => {
+          event.preventDefault();
+          const form = new FormData(event.currentTarget);
+          save.mutate({
+            first_name: String(form.get("first_name") ?? ""),
+            last_name: String(form.get("last_name") ?? ""),
+            email: String(form.get("email") ?? "").trim(),
+          });
+        }}
+      >
+        <Field label="First name">
+          <Input name="first_name" maxLength={150} defaultValue={user.first_name} />
+        </Field>
+        <Field label="Last name">
+          <Input name="last_name" maxLength={150} defaultValue={user.last_name} />
+        </Field>
+        <Field label="Email">
+          <Input name="email" type="email" maxLength={254} defaultValue={user.email} />
+        </Field>
+        <ErrorText error={save.error} />
+        {save.isSuccess && <Notice tone="success">Profile saved.</Notice>}
+        <div>
+          <Button type="submit" disabled={save.isPending}>
+            Save profile
+          </Button>
+        </div>
+      </Form>
+    </Panel>
   );
 }
 
 function Memberships({ user }: { user: UserDetail }) {
   return (
-    <section aria-label="Team memberships" className="space-y-2 text-sm">
-      <h2 className="text-lg font-semibold">Team memberships</h2>
+    <Panel title="Team memberships">
       {user.memberships.length === 0 ? (
-        <p>No team memberships.</p>
+        <p className="m-0">No team memberships.</p>
       ) : (
-        <ul className="list-disc pl-5">
+        <ul className="m-0 list-disc pl-6 text-ui">
           {user.memberships.map((membership) => (
             <li key={membership.membership_id}>
-              <Link href={`/admin/teams/${membership.team.id}`} className="underline">
+              <Link href={`/admin/teams/${membership.team.id}`}>
                 {membership.team.name} ({membership.team.code})
               </Link>
               {membership.team.is_active ? "" : " (inactive)"}
@@ -441,6 +412,6 @@ function Memberships({ user }: { user: UserDetail }) {
           ))}
         </ul>
       )}
-    </section>
+    </Panel>
   );
 }
