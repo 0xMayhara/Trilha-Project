@@ -4,19 +4,31 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 
 import {
-  BUTTON,
-  CELL,
   Confirm,
   displayName,
   ErrorText,
-  HEAD,
-  INPUT,
-  PRIMARY,
   QueryState,
   useAdminMutation,
   useAdminQuery,
 } from "@/components/admin/shared";
-import { Pager } from "@/components/ui";
+import {
+  Button,
+  EnabledBadge,
+  Field,
+  FilterBar,
+  Input,
+  Notice,
+  PageTitle,
+  Pager,
+  SectionTitle,
+  Select,
+  Table,
+  TableBody,
+  TableHead,
+  Td,
+  TeamStateBadge,
+  Tr,
+} from "@/components/ui";
 import { positionLabel } from "@/components/admin/users";
 import {
   activateTeam,
@@ -43,32 +55,23 @@ type TeamFilters = Filters<(typeof TEAM_FILTER_KEYS)[number]>;
 
 export function TeamTable({ teams }: { teams: TeamAdmin[] }) {
   return (
-    <table className="w-full border-collapse text-left text-sm">
-      <caption className="sr-only">Teams</caption>
-      <thead>
-        <tr>
-          {["Team", "Code", "State", "Members"].map((heading) => (
-            <th key={heading} scope="col" className={HEAD}>
-              {heading}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
+    <Table caption="Teams">
+      <TableHead columns={["Team", "Code", "State", "Members"]} />
+      <TableBody>
         {teams.map((team) => (
-          <tr key={team.id} className="border-b border-neutral-100">
-            <td className={CELL}>
-              <Link href={`/admin/teams/${team.id}`} className="underline">
-                {team.name}
-              </Link>
-            </td>
-            <td className={CELL}>{team.code}</td>
-            <td className={CELL}>{team.is_active ? "Active" : "Inactive"}</td>
-            <td className={CELL}>{team.member_count}</td>
-          </tr>
+          <Tr key={team.id}>
+            <Td>
+              <Link href={`/admin/teams/${team.id}`}>{team.name}</Link>
+            </Td>
+            <Td>{team.code}</Td>
+            <Td>
+              <TeamStateBadge active={team.is_active} />
+            </Td>
+            <Td>{team.member_count}</Td>
+          </Tr>
         ))}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   );
 }
 
@@ -91,55 +94,51 @@ export function TeamList() {
   }
 
   return (
-    <section className="space-y-6" aria-label="Teams">
+    <section className="flex flex-col gap-6" aria-label="Teams">
       <form
         aria-label="Create team"
-        className="flex flex-wrap items-end gap-3 text-sm"
+        className="flex flex-wrap items-end gap-3"
         onSubmit={(event) => {
           event.preventDefault();
           const form = new FormData(event.currentTarget);
           create.mutate({ code: String(form.get("code") ?? "").trim(), name: String(form.get("name") ?? "") });
         }}
       >
-        <label className="flex flex-col gap-1">
-          Code (lowercase, digits, _ or -)
-          <input name="code" required maxLength={63} pattern="[a-z][a-z0-9_\-]*" className={INPUT} />
-        </label>
-        <label className="flex flex-col gap-1">
-          Name
-          <input name="name" required maxLength={150} className={INPUT} />
-        </label>
-        <button type="submit" className={PRIMARY} disabled={create.isPending}>
+        <Field label="Code (lowercase, digits, _ or -)">
+          <Input name="code" required maxLength={63} pattern="[a-z][a-z0-9_\-]*" className="w-50" />
+        </Field>
+        <Field label="Name">
+          <Input name="name" required maxLength={150} className="w-64" />
+        </Field>
+        <Button type="submit" variant="primary" disabled={create.isPending}>
           Create team
-        </button>
-        {create.isSuccess && (
-          <p role="status">
-            Team created inactive. <Link href={`/admin/teams/${create.data.id}`} className="underline">Open it to activate.</Link>
-          </p>
-        )}
+        </Button>
       </form>
+      {create.isSuccess && (
+        <Notice tone="success">
+          <p className="m-0">
+            Team created inactive. <Link href={`/admin/teams/${create.data.id}`}>Open it to activate.</Link>
+          </p>
+        </Notice>
+      )}
       <ErrorText error={create.error} />
-      <form role="search" aria-label="Filter teams" onSubmit={apply} className="flex flex-wrap items-end gap-3 text-sm">
-        <label className="flex flex-col gap-1">
-          Code or name
-          <input name="q" maxLength={100} className={INPUT} />
-        </label>
-        <label className="flex flex-col gap-1">
-          State
-          <select name="is_active" defaultValue="" className={INPUT}>
+      <FilterBar label="Filter teams" onSubmit={apply}>
+        <Field label="Code or name">
+          <Input name="q" maxLength={100} className="w-56" />
+        </Field>
+        <Field label="State">
+          <Select name="is_active" defaultValue="" className="w-30">
             <option value="">Any</option>
             <option value="true">Active</option>
             <option value="false">Inactive</option>
-          </select>
-        </label>
-        <button type="submit" className={BUTTON}>
-          Apply filters
-        </button>
-      </form>
+          </Select>
+        </Field>
+        <Button type="submit">Apply filters</Button>
+      </FilterBar>
       <QueryState query={teams} label="teams" />
       {teams.data &&
         (teams.data.results.length === 0 ? (
-          <p>No teams match.</p>
+          <p className="m-0">No teams match.</p>
         ) : (
           <>
             <TeamTable teams={teams.data.results} />
@@ -166,36 +165,33 @@ export function TeamDetailView({ id }: { id: string }) {
   if (team.isPending || team.isError) return <QueryState query={team} label="team" />;
   const current = team.data;
   return (
-    <section className="space-y-6" aria-label="Team">
-      <h1 className="text-2xl font-semibold">
+    <section className="flex flex-col gap-6" aria-label="Team">
+      <PageTitle>
         {current.name} ({current.code})
-      </h1>
-      <p className="text-sm">
-        {current.is_active ? "Active" : "Inactive"}, {current.member_count} members.
+      </PageTitle>
+      <p className="m-0">
+        <TeamStateBadge active={current.is_active} /> {current.member_count} members.
       </p>
       <form
         aria-label="Rename team"
         key={current.name}
-        className="flex items-end gap-2 text-sm"
+        className="flex flex-wrap items-end gap-2"
         onSubmit={(event) => {
           event.preventDefault();
           rename.mutate(String(new FormData(event.currentTarget).get("name") ?? ""));
         }}
       >
-        <label className="flex flex-col gap-1">
-          Name
-          <input name="name" required maxLength={150} defaultValue={current.name} className={INPUT} />
-        </label>
-        <button type="submit" className={BUTTON} disabled={rename.isPending}>
+        <Field label="Name">
+          <Input name="name" required maxLength={150} defaultValue={current.name} className="w-64" />
+        </Field>
+        <Button type="submit" disabled={rename.isPending}>
           Rename
-        </button>
+        </Button>
       </form>
       <ErrorText error={rename.error} />
       {current.is_active ? (
-        <div className="space-y-2">
-          <button type="button" className={BUTTON} onClick={() => setConfirmDeactivate(true)}>
-            Deactivate team
-          </button>
+        <div className="flex flex-col items-start gap-2">
+          <Button onClick={() => setConfirmDeactivate(true)}>Deactivate team</Button>
           {confirmDeactivate && (
             <Confirm
               message={`Deactivate ${current.name}? Its members lose access to its data until it is activated again.`}
@@ -223,39 +219,37 @@ function Activation({ team }: { team: TeamAdmin }) {
   );
   if (!reviewing) {
     return (
-      <button type="button" className={BUTTON} onClick={() => setReviewing(true)}>
-        Review activation
-      </button>
+      <div>
+        <Button onClick={() => setReviewing(true)}>Review activation</Button>
+      </div>
     );
   }
   if (preview.isPending || preview.isError) return <QueryState query={preview} label="activation preview" />;
   const { revision, membership_count: members, role_assignment_count: grants } = preview.data;
   return (
-    <form
-      aria-label="Activate team"
-      className="space-y-2 rounded border border-amber-400 p-3 text-sm"
-      onSubmit={(event) => {
-        event.preventDefault();
-        activate.mutate({ revision, code: String(new FormData(event.currentTarget).get("code") ?? "") });
-      }}
-    >
-      <p>
-        Activating restores {members} memberships and {grants} role assignments. Disabled accounts stay denied.
-      </p>
-      <label className="flex flex-col gap-1">
-        Type the team code ({team.code}) to confirm
-        <input name="code" required autoComplete="off" maxLength={63} className={INPUT} />
-      </label>
-      <ErrorText error={activate.error} />
-      <div className="flex gap-2">
-        <button type="submit" className={PRIMARY} disabled={activate.isPending}>
-          Activate
-        </button>
-        <button type="button" className={BUTTON} onClick={() => setReviewing(false)}>
-          Cancel
-        </button>
-      </div>
-    </form>
+    <Notice tone="confirm" aria-label="Activate team">
+      <form
+        className="flex flex-col gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          activate.mutate({ revision, code: String(new FormData(event.currentTarget).get("code") ?? "") });
+        }}
+      >
+        <p className="m-0">
+          Activating restores {members} memberships and {grants} role assignments. Disabled accounts stay denied.
+        </p>
+        <Field label={`Type the team code (${team.code}) to confirm`}>
+          <Input name="code" required autoComplete="off" maxLength={63} className="w-60" />
+        </Field>
+        <ErrorText error={activate.error} />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="submit" variant="primary" disabled={activate.isPending}>
+            Activate
+          </Button>
+          <Button onClick={() => setReviewing(false)}>Cancel</Button>
+        </div>
+      </form>
+    </Notice>
   );
 }
 
@@ -264,13 +258,13 @@ function MemberSection({ team }: { team: TeamAdmin }) {
   const members = useAdminQuery(["team", team.id, "members", page], (signal) => fetchMembers(team.id, page, signal));
   const roles = useAdminQuery(["roles", "all"], (signal) => fetchRoles({}, 1, signal, 100));
   return (
-    <section aria-label="Members" className="space-y-3 text-sm">
-      <h2 className="text-lg font-semibold">Members</h2>
+    <section aria-label="Members" className="flex flex-col gap-3">
+      <SectionTitle>Members</SectionTitle>
       <AddMember teamId={team.id} />
       <QueryState query={members} label="members" />
       {members.data &&
         (members.data.results.length === 0 ? (
-          <p>No members yet.</p>
+          <p className="m-0">No members yet.</p>
         ) : (
           <>
             <MemberTable teamId={team.id} members={members.data.results} roles={roles.data?.results ?? []} />
@@ -297,34 +291,31 @@ function AddMember({ teamId }: { teamId: string }) {
   );
   const add = useAdminMutation((userId: string) => addMember(teamId, userId), () => setTerm(""));
   return (
-    <div className="space-y-2">
+    <div className="flex flex-col gap-2">
       <form
         role="search"
         aria-label="Find a user to add"
-        className="flex items-end gap-2"
+        className="flex flex-wrap items-end gap-2"
         onSubmit={(event) => {
           event.preventDefault();
           setTerm(String(new FormData(event.currentTarget).get("q") ?? "").trim());
         }}
       >
-        <label className="flex flex-col gap-1">
-          Find enabled user
-          <input name="q" maxLength={100} className={INPUT} />
-        </label>
-        <button type="submit" className={BUTTON}>
-          Search
-        </button>
+        <Field label="Find enabled user">
+          <Input name="q" maxLength={100} className="w-60" />
+        </Field>
+        <Button type="submit">Search</Button>
       </form>
       {term && <QueryState query={found} label="users" />}
       {term && found.data && (
-        <ul className="space-y-1">
+        <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-ui">
           {found.data.results.length === 0 && <li>No enabled user matches.</li>}
           {found.data.results.map((candidate) => (
             <li key={candidate.id} className="flex items-center gap-2">
               <span>{displayName(candidate)}</span>
-              <button type="button" className={BUTTON} disabled={add.isPending} onClick={() => add.mutate(candidate.id)}>
+              <Button disabled={add.isPending} onClick={() => add.mutate(candidate.id)}>
                 Add to team
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
@@ -348,84 +339,74 @@ export function MemberTable({ teamId, members, roles }: { teamId: string; member
     assignRole(membershipId, roleId),
   );
   return (
-    <div className="space-y-2">
-      <table className="w-full border-collapse text-left text-sm">
-        <caption className="sr-only">Team members</caption>
-        <thead>
-          <tr>
-            {["Member", "State", "Position", "Roles", "Actions"].map((heading) => (
-              <th key={heading} scope="col" className={HEAD}>
-                {heading}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
+    <div className="flex flex-col gap-3">
+      <Table caption="Team members">
+        <TableHead columns={["Member", "State", "Position", "Roles", "Actions"]} />
+        <TableBody>
           {members.map((member) => {
             const held = new Set(member.roles.map((role) => role.id));
             const available = roles.filter((role) => !held.has(role.id));
             return (
-              <tr key={member.membership_id} className="border-b border-neutral-100 align-top">
-                <td className={CELL}>
-                  <Link href={`/admin/users/${member.user.id}`} className="underline">
-                    {displayName(member.user)}
-                  </Link>
-                </td>
-                <td className={CELL}>{member.user.is_active ? "Enabled" : "Disabled"}</td>
-                <td className={CELL}>{positionLabel(member.user.position)}</td>
-                <td className={CELL}>
-                  <ul>
+              <Tr key={member.membership_id}>
+                <Td>
+                  <Link href={`/admin/users/${member.user.id}`}>{displayName(member.user)}</Link>
+                </Td>
+                <Td>
+                  <EnabledBadge enabled={member.user.is_active} />
+                </Td>
+                <Td>{positionLabel(member.user.position)}</Td>
+                <Td>
+                  <ul className="m-0 flex list-none flex-col gap-1 p-0">
                     {member.roles.length === 0 && <li>None</li>}
                     {member.roles.map((role) => (
                       <li key={role.id} className="flex items-center gap-2">
                         {role.name}
-                        <button
-                          type="button"
-                          className="underline"
+                        <Button
+                          variant="link"
                           aria-label={`Revoke ${role.name} from ${member.user.username}`}
                           onClick={() => setPending({ kind: "revoke", member, role })}
                         >
                           Revoke
-                        </button>
+                        </Button>
                       </li>
                     ))}
                   </ul>
-                </td>
-                <td className={`${CELL} space-y-1`}>
-                  {available.length > 0 && (
-                    <form
-                      aria-label={`Assign a role to ${member.user.username}`}
-                      className="flex gap-1"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        const roleId = String(new FormData(event.currentTarget).get("role_id") ?? "");
-                        if (roleId) assign.mutate({ membershipId: member.membership_id, roleId });
-                      }}
-                    >
-                      <label className="sr-only" htmlFor={`role-${member.membership_id}`}>
-                        Role
-                      </label>
-                      <select id={`role-${member.membership_id}`} name="role_id" className={INPUT}>
-                        {available.map((role) => (
-                          <option key={role.id} value={role.id}>
-                            {role.name} ({role.code})
-                          </option>
-                        ))}
-                      </select>
-                      <button type="submit" className={BUTTON} disabled={assign.isPending}>
-                        Assign
-                      </button>
-                    </form>
-                  )}
-                  <button type="button" className={BUTTON} onClick={() => setPending({ kind: "remove", member })}>
-                    Remove from team
-                  </button>
-                </td>
-              </tr>
+                </Td>
+                <Td>
+                  <div className="flex flex-col items-start gap-1.5">
+                    {available.length > 0 && (
+                      <form
+                        aria-label={`Assign a role to ${member.user.username}`}
+                        className="flex flex-wrap items-center gap-2"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          const roleId = String(new FormData(event.currentTarget).get("role_id") ?? "");
+                          if (roleId) assign.mutate({ membershipId: member.membership_id, roleId });
+                        }}
+                      >
+                        <label className="sr-only" htmlFor={`role-${member.membership_id}`}>
+                          Role
+                        </label>
+                        <Select id={`role-${member.membership_id}`} name="role_id" className="w-48">
+                          {available.map((role) => (
+                            <option key={role.id} value={role.id}>
+                              {role.name} ({role.code})
+                            </option>
+                          ))}
+                        </Select>
+                        <Button type="submit" disabled={assign.isPending}>
+                          Assign
+                        </Button>
+                      </form>
+                    )}
+                    <Button onClick={() => setPending({ kind: "remove", member })}>Remove from team</Button>
+                  </div>
+                </Td>
+              </Tr>
             );
           })}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
       {pending && (
         <Confirm
           message={

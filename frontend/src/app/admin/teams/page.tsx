@@ -1,9 +1,10 @@
 import { TeamList } from "@/components/admin/teams";
+import { PageTitle } from "@/components/ui";
 
 export default function AdminTeamsPage() {
   return (
     <>
-      <h1 className="text-2xl font-semibold">Teams</h1>
+      <PageTitle className="sr-only">Teams</PageTitle>
       <TeamList />
     </>
   );
