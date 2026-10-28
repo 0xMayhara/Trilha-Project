@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 
 import { AssetTable } from "@/components/asset-table";
+import { buttonClasses, Button, Field, FilterBar, Input, Notice, Pager, Select } from "@/components/ui";
 import { adminKey, fetchPlatformSelf, fetchTeams, platformKey } from "@/lib/admin";
 import {
   accessTeamsKey,
@@ -21,8 +22,6 @@ import {
   type AssetFilters,
 } from "@/lib/assets";
 import { fetchSessionUser, SESSION_QUERY_KEY } from "@/lib/auth";
-
-const INPUT = "rounded border border-neutral-300 px-2 py-1";
 
 function readFilters(form: FormData): AssetFilters {
   const filters: AssetFilters = {};
@@ -79,79 +78,79 @@ export function AssetInventory() {
     setPage(1);
   }
 
+  const FIELD_LABELS: Record<string, string> = { q: "Search", ip: "IP address" };
+  const fieldError = (key: string) => (errors[key] ? `${FIELD_LABELS[key]}: ${errors[key].join(" ")}` : undefined);
+  const otherErrors = Object.entries(errors).filter(([field]) => !(field in FIELD_LABELS));
+
   return (
-    <section className="space-y-4" aria-label="Asset inventory">
+    <section className="flex flex-col gap-6" aria-label="Asset inventory">
       {canRegister && (
-        <Link href="/assets/new" className="inline-block rounded bg-neutral-900 px-3 py-2 text-sm text-white">
-          Register asset
-        </Link>
+        <div>
+          <Link href="/assets/new" className={buttonClasses("primary")}>
+            Register asset
+          </Link>
+        </div>
       )}
-      <form role="search" aria-label="Filter assets" onSubmit={apply} className="flex flex-wrap items-end gap-3 text-sm">
-        <label className="flex flex-col gap-1">
-          Name or hostname
-          <input name="q" maxLength={100} defaultValue={filters.q} className={INPUT} aria-invalid={Boolean(errors.q)} />
-        </label>
-        <label className="flex flex-col gap-1">
-          Exact IP address
-          <input name="ip" maxLength={45} defaultValue={filters.ip} className={INPUT} aria-invalid={Boolean(errors.ip)} />
-        </label>
-        <label className="flex flex-col gap-1">
-          Status
-          <select name="status" defaultValue={filters.status ?? "active"} className={INPUT}>
+      <FilterBar label="Filter assets" onSubmit={apply}>
+        <Field label="Name or hostname" error={fieldError("q")}>
+          <Input name="q" maxLength={100} defaultValue={filters.q} className="w-50" />
+        </Field>
+        <Field label="Exact IP address" error={fieldError("ip")}>
+          <Input name="ip" maxLength={45} defaultValue={filters.ip} className="w-38" />
+        </Field>
+        <Field label="Status">
+          <Select name="status" defaultValue={filters.status ?? "active"}>
             <option value="active">Active</option>
             <option value="retired">Retired</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          Team
-          <select name="team" defaultValue={filters.team ?? ""} className={INPUT}>
+          </Select>
+        </Field>
+        <Field label="Team">
+          <Select name="team" defaultValue={filters.team ?? ""}>
             <option value="">{isAdmin ? "All teams" : "All my teams"}</option>
             {viewable.map((team) => (
               <option key={team.id} value={team.id}>
                 {team.name} ({team.code})
               </option>
             ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          Kind
-          <select name="kind" defaultValue={filters.kind ?? ""} className={INPUT}>
+          </Select>
+        </Field>
+        <Field label="Kind">
+          <Select name="kind" defaultValue={filters.kind ?? ""}>
             <option value="">Any kind</option>
             {ASSET_KINDS.map((kind) => (
               <option key={kind} value={kind}>
                 {KIND_LABELS[kind]}
               </option>
             ))}
-          </select>
-        </label>
-        <button type="submit" className="rounded border border-neutral-400 px-3 py-1">
-          Apply filters
-        </button>
-      </form>
-      {Object.entries(errors).map(([field, messages]) => (
-        <p key={field} role="alert" className="text-sm text-red-700">
-          {field === "ip" ? "IP address" : field === "q" ? "Search" : field}: {messages.join(" ")}
-        </p>
+          </Select>
+        </Field>
+        <Button type="submit">Apply filters</Button>
+      </FilterBar>
+      {otherErrors.map(([field, messages]) => (
+        <Notice key={field} tone="error">
+          {field}: {messages.join(" ")}
+        </Notice>
       ))}
-      {assets.isPending && <p role="status">Loading assets...</p>}
-      {assets.isError && Object.keys(errors).length === 0 && <p role="alert">{assetErrorMessage(assets.error)}</p>}
+      {assets.isPending && (
+        <p role="status" className="m-0 text-ink-muted">
+          Loading assets...
+        </p>
+      )}
+      {assets.isError && Object.keys(errors).length === 0 && <Notice tone="error">{assetErrorMessage(assets.error)}</Notice>}
       {assets.data &&
         (assets.data.results.length === 0 ? (
-          <p>{filtered ? "No assets match these filters." : "No assets yet."}</p>
+          <p className="m-0">{filtered ? "No assets match these filters." : "No assets yet."}</p>
         ) : (
           <>
             <AssetTable assets={assets.data.results} />
-            <nav className="flex gap-4 text-sm" aria-label="Asset pages">
-              <button type="button" disabled={!assets.data.previous} onClick={() => setPage(page - 1)}>
-                Previous
-              </button>
-              <span>
-                Page {page} ({assets.data.count} assets)
-              </span>
-              <button type="button" disabled={!assets.data.next} onClick={() => setPage(page + 1)}>
-                Next
-              </button>
-            </nav>
+            <Pager
+              label="assets"
+              page={page}
+              count={assets.data.count}
+              hasPrevious={Boolean(assets.data.previous)}
+              hasNext={Boolean(assets.data.next)}
+              onPage={setPage}
+            />
           </>
         ))}
     </section>

@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { AssetStatusBadge, LevelBadge, Table, TableBody, TableHead, Td, Tr } from "@/components/ui";
 import {
   CRITICALITY_LABELS,
   ENVIRONMENT_LABELS,
@@ -27,41 +28,34 @@ const HEADINGS = [
 /** Every value is rendered as React text, never HTML (SEC-19). */
 export function AssetTable({ assets }: { assets: Asset[] }) {
   return (
-    <table className="w-full border-collapse text-left text-sm">
-      <caption className="sr-only">Assets</caption>
-      <thead>
-        <tr>
-          {HEADINGS.map((heading) => (
-            <th key={heading} scope="col" className="border-b border-neutral-300 px-2 py-1 font-semibold">
-              {heading}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
+    <Table caption="Assets">
+      <TableHead columns={HEADINGS} />
+      <TableBody>
         {assets.map((asset) => (
-          <tr key={asset.id} className="border-b border-neutral-100">
-            <td className="px-2 py-1">
-              <Link href={`/assets/${asset.id}`} className="underline">
-                {asset.name}
-              </Link>
-            </td>
-            <td className="px-2 py-1">{KIND_LABELS[asset.kind]}</td>
-            <td className="px-2 py-1">{asset.hostname || "None"}</td>
-            <td className="px-2 py-1">{asset.ip_addresses.join(", ") || "None"}</td>
-            <td className="px-2 py-1">{osSummary(asset)}</td>
-            <td className="px-2 py-1">
+          <Tr key={asset.id}>
+            <Td className="whitespace-nowrap">
+              <Link href={`/assets/${asset.id}`}>{asset.name}</Link>
+            </Td>
+            <Td>{KIND_LABELS[asset.kind]}</Td>
+            <Td>{asset.hostname || "None"}</Td>
+            <Td>{asset.ip_addresses.join(", ") || "None"}</Td>
+            <Td>{osSummary(asset)}</Td>
+            <Td>
               {asset.team.name} ({asset.team.code})
-            </td>
-            <td className="px-2 py-1">{asset.environment ? ENVIRONMENT_LABELS[asset.environment] : "Unspecified"}</td>
-            <td className="px-2 py-1">{asset.criticality ? CRITICALITY_LABELS[asset.criticality] : "Unassessed"}</td>
-            <td className="px-2 py-1">{hardeningSummary(asset.hardening_status)}</td>
-            <td className="px-2 py-1">{exposureSummary(asset.internet_exposure)}</td>
-            <td className="px-2 py-1">{asset.status === "active" ? "Active" : "Retired"}</td>
-          </tr>
+            </Td>
+            <Td>{asset.environment ? ENVIRONMENT_LABELS[asset.environment] : "Unspecified"}</Td>
+            <Td>
+              <LevelBadge level={asset.criticality} />
+            </Td>
+            <Td>{hardeningSummary(asset.hardening_status)}</Td>
+            <Td>{exposureSummary(asset.internet_exposure)}</Td>
+            <Td>
+              <AssetStatusBadge status={asset.status} />
+            </Td>
+          </Tr>
         ))}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   );
 }
 
