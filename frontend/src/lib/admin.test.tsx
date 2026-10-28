@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { AuditTable, readAuditFilters, toIsoWithOffset } from "@/components/admin/audit";
+import { AuditDetail, AuditTable, readAuditFilters, toAuditChanges, toIsoWithOffset } from "@/components/admin/audit";
 import { OneTimeLink } from "@/components/admin/shared";
 import { StepUpProvider } from "@/components/admin/step-up";
 import { MemberTable, TeamTable } from "@/components/admin/teams";
@@ -226,6 +226,23 @@ describe("SPEC-0010 administration client", () => {
         />,
       ),
       renderToStaticMarkup(
+        <AuditDetail
+          entry={{
+            event_id: id,
+            occurred_at: "2026-10-22T10:00:00Z",
+            actor: { type: "user", id, label: hostile },
+            action: "rbac.admin_granted",
+            outcome: "denied",
+            resource: { type: hostile, id: hostile },
+            source: "http",
+            request_id: null,
+            client_ip: null,
+            changes: { [hostile]: { before: [hostile], after: [hostile, "<script>x</script>"] } },
+            metadata: { [hostile]: hostile },
+          }}
+        />,
+      ),
+      renderToStaticMarkup(
         <QueryClientProvider client={new QueryClient()}>
           <StepUpProvider>
             <MemberTable
@@ -246,6 +263,48 @@ describe("SPEC-0010 administration client", () => {
       readFileSync(join(process.cwd(), "src/components/admin", file), "utf8"),
     );
     for (const source of sources) expect(source).not.toContain("innerHTML");
+  });
+
+  it("test_audit_changes_adapter_never_throws_cwe_754", () => {
+    expect(
+      toAuditChanges({
+        name: { before: "a", after: "b" },
+        created: { after: 1 },
+        text: "plain",
+        list: [1, 2],
+        empty: null,
+        nested: { other: 1 },
+      }),
+    ).toEqual({ name: ["a", "b"], created: [null, 1] });
+    // A JSON "__proto__" key stays a plain field and never touches the prototype.
+    const parsed = toAuditChanges(JSON.parse('{"__proto__": {"before": 1, "after": 2}}'));
+    expect(Object.entries(parsed)).toEqual([["__proto__", [1, 2]]]);
+  });
+
+  it("test_audit_detail_shows_every_field_cwe_223", () => {
+    const entry = {
+      event_id: id,
+      occurred_at: "2026-10-22T10:00:00Z",
+      actor: { type: "user", id: other, label: "ana.lima" },
+      action: "accounts.user_updated",
+      outcome: "success",
+      resource: { type: "accounts.user", id: "res-42" },
+      source: "command",
+      request_id: "11111111-2222-3333-4444-555555555555",
+      client_ip: "10.0.0.7",
+      changes: { last_name: { before: "Alves", after: "Pereira" }, odd: "kept in raw" },
+      metadata: { reason: "ticket SEC-418" },
+    };
+    const row = renderToStaticMarkup(<AuditTable entries={[entry]} />);
+    expect(row).toContain("last_name: Alves → Pereira");
+    expect(row).toContain('aria-expanded="false"');
+    expect(row).toContain(`aria-controls="audit-${id}"`);
+    const html = renderToStaticMarkup(<AuditDetail entry={entry} />);
+    for (const value of [id, other, "ana.lima", "accounts.user", "res-42", "command", entry.request_id, "10.0.0.7", "Pereira", "ticket SEC-418"]) {
+      expect(html).toContain(value);
+    }
+    expect(html).toContain("kept in raw");
+    expect(html).not.toContain("Open event page");
   });
 
   it("test_admin_nav_shown_only_from_platform_state", () => {

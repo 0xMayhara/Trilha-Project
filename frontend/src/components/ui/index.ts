@@ -11,5 +11,6 @@ export { Page, PageTitle, SectionTitle } from "./page";
 export { Pager } from "./pager";
 export { Panel } from "./panel";
 export { Stat, StatGrid } from "./stat";
-export { Sub, Table, TableBody, TableHead, Td, Th, Tr } from "./table";
+export { DetailRow, Sub, Table, TableBody, TableHead, Td, Th, Tr } from "./table";
 export { AssetStatusBadge, EnabledBadge, FindingStatusBadge, LevelBadge, TeamStateBadge } from "./domain-badges";
+export { AuditChangesTable, AuditMetadataFacts, AuditRawJson, auditSummary, auditValue, type AuditChanges, type AuditMetadata } from "./audit";
