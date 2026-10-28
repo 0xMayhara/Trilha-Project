@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 
 import { FindingTable } from "@/components/finding-table";
+import { Button, Field, FilterBar, Input, Notice, Pager, Select } from "@/components/ui";
 import { adminKey, fetchPlatformSelf, fetchTeams, platformKey } from "@/lib/admin";
 import { accessTeamsKey, fetchAccessTeams, fieldErrors, teamsWith } from "@/lib/assets";
 import { fetchSessionUser, SESSION_QUERY_KEY } from "@/lib/auth";
@@ -21,8 +22,6 @@ import {
   SEVERITY_LABELS,
   type FindingFilters,
 } from "@/lib/findings";
-
-const INPUT = "rounded border border-neutral-300 px-2 py-1";
 
 function readFilters(form: FormData): FindingFilters {
   const filters: FindingFilters = {};
@@ -79,93 +78,88 @@ export function FindingInventory() {
   }
 
   return (
-    <section className="space-y-4" aria-label="Findings">
-      <p className="text-sm text-neutral-600">Report a finding from the page of the affected asset.</p>
-      <form role="search" aria-label="Filter findings" onSubmit={apply} className="flex flex-wrap items-end gap-3 text-sm">
-        <label className="flex flex-col gap-1">
-          Title
-          <input name="q" maxLength={100} defaultValue={filters.q} className={INPUT} aria-invalid={Boolean(errors.q)} />
-        </label>
-        <label className="flex flex-col gap-1">
-          Status
-          <select name="status" defaultValue={filters.status ?? ""} className={INPUT}>
+    <section className="flex flex-col gap-6" aria-label="Findings">
+      <p className="m-0 text-small text-ink-muted">Report a finding from the page of the affected asset.</p>
+      <FilterBar label="Filter findings" onSubmit={apply}>
+        <Field label="Title" error={errors.q ? `Title: ${errors.q.join(" ")}` : undefined}>
+          <Input name="q" maxLength={100} defaultValue={filters.q} className="w-44" />
+        </Field>
+        <Field label="Status">
+          <Select name="status" defaultValue={filters.status ?? ""} className="w-32">
             <option value="">Any status</option>
             {FINDING_STATUSES.map((status) => (
               <option key={status} value={status}>
                 {FINDING_STATUS_LABELS[status]}
               </option>
             ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          Severity
-          <select name="severity" defaultValue={filters.severity ?? ""} className={INPUT}>
+          </Select>
+        </Field>
+        <Field label="Severity">
+          <Select name="severity" defaultValue={filters.severity ?? ""} className="w-32">
             <option value="">Any severity</option>
             {SEVERITIES.map((severity) => (
               <option key={severity} value={severity}>
                 {SEVERITY_LABELS[severity]}
               </option>
             ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          Category
-          <select name="category" defaultValue={filters.category ?? ""} className={INPUT}>
+          </Select>
+        </Field>
+        <Field label="Category">
+          <Select name="category" defaultValue={filters.category ?? ""} className="w-36">
             <option value="">Any category</option>
             {CATEGORIES.map((category) => (
               <option key={category} value={category}>
                 {CATEGORY_LABELS[category]}
               </option>
             ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          Team
-          <select name="team" defaultValue={filters.team ?? ""} className={INPUT}>
+          </Select>
+        </Field>
+        <Field label="Team">
+          <Select name="team" defaultValue={filters.team ?? ""} className="w-44">
             <option value="">{isAdmin ? "All teams" : "All my teams"}</option>
             {viewable.map((team) => (
               <option key={team.id} value={team.id}>
                 {team.name} ({team.code})
               </option>
             ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          Assignee
-          <select name="assignee" defaultValue={filters.assignee ?? ""} className={INPUT}>
+          </Select>
+        </Field>
+        <Field label="Assignee">
+          <Select name="assignee" defaultValue={filters.assignee ?? ""} className="w-32">
             <option value="">Anyone</option>
             <option value="me">Me</option>
             <option value="none">Unassigned</option>
-          </select>
-        </label>
-        <button type="submit" className="rounded border border-neutral-400 px-3 py-1">
-          Apply filters
-        </button>
-      </form>
-      {Object.entries(errors).map(([field, messages]) => (
-        <p key={field} role="alert" className="text-sm text-red-700">
-          {field === "q" ? "Title" : field}: {messages.join(" ")}
+          </Select>
+        </Field>
+        <Button type="submit">Apply filters</Button>
+      </FilterBar>
+      {Object.entries(errors)
+        .filter(([field]) => field !== "q")
+        .map(([field, messages]) => (
+          <Notice key={field} tone="error">
+            {field}: {messages.join(" ")}
+          </Notice>
+        ))}
+      {findings.isPending && (
+        <p role="status" className="m-0 text-ink-muted">
+          Loading findings...
         </p>
-      ))}
-      {findings.isPending && <p role="status">Loading findings...</p>}
-      {findings.isError && Object.keys(errors).length === 0 && <p role="alert">{findingErrorMessage(findings.error)}</p>}
+      )}
+      {findings.isError && Object.keys(errors).length === 0 && <Notice tone="error">{findingErrorMessage(findings.error)}</Notice>}
       {findings.data &&
         (findings.data.results.length === 0 ? (
-          <p>{filtered ? "No findings match these filters." : "No findings you can view yet."}</p>
+          <p className="m-0">{filtered ? "No findings match these filters." : "No findings you can view yet."}</p>
         ) : (
           <>
             <FindingTable findings={findings.data.results} />
-            <nav className="flex gap-4 text-sm" aria-label="Finding pages">
-              <button type="button" disabled={!findings.data.previous} onClick={() => setPage(page - 1)}>
-                Previous
-              </button>
-              <span>
-                Page {page} ({findings.data.count} findings)
-              </span>
-              <button type="button" disabled={!findings.data.next} onClick={() => setPage(page + 1)}>
-                Next
-              </button>
-            </nav>
+            <Pager
+              label="findings"
+              page={page}
+              count={findings.data.count}
+              hasPrevious={Boolean(findings.data.previous)}
+              hasNext={Boolean(findings.data.next)}
+              onPage={setPage}
+            />
           </>
         ))}
     </section>
