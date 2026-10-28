@@ -4,9 +4,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
 
+import { Button, Field, Form, Input, Notice } from "@/components/ui";
 import { authErrorMessage, logIn, SESSION_QUERY_KEY } from "@/lib/auth";
-
-const inputClass = "rounded border border-neutral-300 px-3 py-2";
 
 export function LoginForm() {
   const router = useRouter();
@@ -26,34 +25,17 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-3">
-      <label className="flex flex-col gap-1 text-sm">
-        Username
-        <input name="username" autoComplete="username" required maxLength={150} className={inputClass} />
-      </label>
-      <label className="flex flex-col gap-1 text-sm">
-        Password
-        <input
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          required
-          maxLength={1024}
-          className={inputClass}
-        />
-      </label>
-      {login.isError && (
-        <p role="alert" className="text-sm text-red-700">
-          {authErrorMessage(login.error)}
-        </p>
-      )}
-      <button
-        type="submit"
-        disabled={login.isPending}
-        className="rounded bg-neutral-900 px-3 py-2 text-white disabled:opacity-60"
-      >
+    <Form onSubmit={onSubmit} className="max-w-none">
+      <Field label="Username">
+        <Input name="username" autoComplete="username" required maxLength={150} />
+      </Field>
+      <Field label="Password">
+        <Input name="password" type="password" autoComplete="current-password" required maxLength={1024} />
+      </Field>
+      {login.isError && <Notice tone="error">{authErrorMessage(login.error)}</Notice>}
+      <Button type="submit" variant="primary" disabled={login.isPending}>
         Log in
-      </button>
-    </form>
+      </Button>
+    </Form>
   );
 }
