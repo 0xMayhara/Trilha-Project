@@ -1,8 +1,9 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useState, type FormEvent, type ReactNode } from "react";
 
+import { Button, Dialog, Field, Input } from "@/components/ui";
 import { ApiError } from "@/lib/api-client";
 import { afterReauthentication, reauthenticate, StepUpCancelled, withStepUp } from "@/lib/admin";
 
@@ -54,20 +55,8 @@ function reauthenticationMessage(error: unknown): string {
 
 function StepUpDialog({ onConfirmed, onCancel }: { onConfirmed: () => void; onCancel: () => void }) {
   const client = useQueryClient();
-  const dialog = useRef<HTMLDialogElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const element = dialog.current;
-    // The native modal dialog makes the page behind it inert and handles Escape as "cancel".
-    element?.showModal();
-    return () => {
-      element?.close();
-      opener?.focus();
-    };
-  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -88,49 +77,21 @@ function StepUpDialog({ onConfirmed, onCancel }: { onConfirmed: () => void; onCa
     }
   }
 
+  // The native modal dialog makes the page behind it inert, handles Escape as "cancel" and returns focus.
   return (
-    <dialog
-      ref={dialog}
-      aria-labelledby="step-up-title"
-      className="m-auto w-full max-w-sm rounded border border-neutral-300 p-4 backdrop:bg-black/40"
-      onCancel={(event) => {
-        event.preventDefault();
-        onCancel();
-      }}
-    >
-      <form onSubmit={submit} className="space-y-3 text-sm">
-        <h2 id="step-up-title" className="text-lg font-semibold">
-          Confirm your password
-        </h2>
-        <p>Administrative changes need a password confirmation in the last 10 minutes.</p>
-        <label className="flex flex-col gap-1">
-          Password
-          <input
-            name="password"
-            type="password"
-            required
-            autoFocus
-            autoComplete="current-password"
-            maxLength={1024}
-            aria-invalid={Boolean(error)}
-            aria-describedby={error ? "step-up-error" : undefined}
-            className="rounded border border-neutral-300 px-2 py-1"
-          />
-        </label>
-        {error && (
-          <p id="step-up-error" role="alert" className="text-red-700">
-            {error}
-          </p>
-        )}
-        <div className="flex gap-2">
-          <button type="submit" disabled={busy} className="rounded bg-neutral-900 px-3 py-1 text-white disabled:opacity-60">
+    <Dialog title="Confirm your password" onCancel={onCancel}>
+      <form onSubmit={submit} className="flex flex-col gap-3">
+        <p className="m-0">Administrative changes need a password confirmation in the last 10 minutes.</p>
+        <Field label="Password" error={error ? <span role="alert">{error}</span> : undefined}>
+          <Input name="password" type="password" required autoFocus autoComplete="current-password" maxLength={1024} />
+        </Field>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="submit" variant="primary" disabled={busy}>
             {busy ? "Confirming..." : "Confirm"}
-          </button>
-          <button type="button" onClick={onCancel} className="rounded border border-neutral-400 px-3 py-1">
-            Cancel
-          </button>
+          </Button>
+          <Button onClick={onCancel}>Cancel</Button>
         </div>
       </form>
-    </dialog>
+    </Dialog>
   );
 }
