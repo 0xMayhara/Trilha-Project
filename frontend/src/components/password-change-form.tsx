@@ -4,6 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 
 import { NewPasswordFields, readNewPassword } from "@/components/new-password-fields";
+import { Button, Field, Form, Input, Notice } from "@/components/ui";
 import { authErrorMessage, changePassword } from "@/lib/auth";
 
 export function PasswordChangeForm() {
@@ -25,36 +26,18 @@ export function PasswordChangeForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-3">
-      <label className="flex flex-col gap-1 text-sm">
-        Current password
-        <input
-          name="current_password"
-          type="password"
-          autoComplete="current-password"
-          required
-          maxLength={1024}
-          className="rounded border border-neutral-300 px-3 py-2"
-        />
-      </label>
-      <NewPasswordFields />
-      {(mismatch ?? change.isError) && (
-        <p role="alert" className="text-sm text-red-700">
-          {mismatch ?? authErrorMessage(change.error)}
-        </p>
-      )}
-      {change.isSuccess && (
-        <p role="status" className="text-sm text-green-700">
-          Password changed. Your other sessions have been signed out.
-        </p>
-      )}
-      <button
-        type="submit"
-        disabled={change.isPending}
-        className="rounded bg-neutral-900 px-3 py-2 text-white disabled:opacity-60"
-      >
-        Change password
-      </button>
-    </form>
+    <Form onSubmit={onSubmit}>
+      <Field label="Current password">
+        <Input name="current_password" type="password" autoComplete="current-password" required maxLength={1024} />
+      </Field>
+      <NewPasswordFields mismatch={mismatch} />
+      {change.isError && <Notice tone="error">{authErrorMessage(change.error)}</Notice>}
+      {change.isSuccess && <Notice tone="success">Password changed. Your other sessions have been signed out.</Notice>}
+      <div>
+        <Button type="submit" variant="primary" disabled={change.isPending}>
+          Change password
+        </Button>
+      </div>
+    </Form>
   );
 }
