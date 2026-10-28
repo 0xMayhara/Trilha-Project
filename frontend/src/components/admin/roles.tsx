@@ -3,19 +3,22 @@
 import Link from "next/link";
 import { useState } from "react";
 
+import { Confirm, ErrorText, QueryState, useAdminMutation, useAdminQuery } from "@/components/admin/shared";
 import {
-  BUTTON,
-  CELL,
-  Confirm,
-  ErrorText,
-  HEAD,
-  INPUT,
-  PRIMARY,
-  QueryState,
-  useAdminMutation,
-  useAdminQuery,
-} from "@/components/admin/shared";
-import { Pager } from "@/components/ui";
+  Button,
+  Field,
+  Input,
+  Notice,
+  PageTitle,
+  Pager,
+  SectionTitle,
+  Select,
+  Table,
+  TableBody,
+  TableHead,
+  Td,
+  Tr,
+} from "@/components/ui";
 import { PERMISSION_CODES, PERMISSION_LABELS, type PermissionCode } from "@/lib/access";
 import {
   createRole,
@@ -30,33 +33,22 @@ import {
 
 export function RoleTable({ roles }: { roles: RoleAdmin[] }) {
   return (
-    <table className="w-full border-collapse text-left text-sm">
-      <caption className="sr-only">Roles</caption>
-      <thead>
-        <tr>
-          {["Role", "Code", "Permissions"].map((heading) => (
-            <th key={heading} scope="col" className={HEAD}>
-              {heading}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
+    <Table caption="Roles">
+      <TableHead columns={["Role", "Code", "Permissions"]} />
+      <TableBody>
         {roles.map((role) => (
-          <tr key={role.id} className="border-b border-neutral-100">
-            <td className={CELL}>
-              <Link href={`/admin/roles/${role.id}`} className="underline">
-                {role.name}
-              </Link>
-            </td>
-            <td className={CELL}>{role.code}</td>
-            <td className={CELL}>
+          <Tr key={role.id}>
+            <Td>
+              <Link href={`/admin/roles/${role.id}`}>{role.name}</Link>
+            </Td>
+            <Td>{role.code}</Td>
+            <Td>
               {role.permissions.length > 0 ? role.permissions.map((code) => PERMISSION_LABELS[code]).join(", ") : "None"}
-            </td>
-          </tr>
+            </Td>
+          </Tr>
         ))}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   );
 }
 
@@ -66,55 +58,50 @@ export function RoleList() {
   const roles = useAdminQuery(["roles", q, page], (signal) => fetchRoles(q ? { q } : {}, page, signal));
   const create = useAdminMutation(({ code, name }: { code: string; name: string }) => createRole(code, name));
   return (
-    <section className="space-y-6" aria-label="Roles">
-      <p className="text-sm">
+    <section className="flex flex-col gap-6" aria-label="Roles">
+      <p className="m-0 text-small">
         Roles are reusable sets of permissions. A role grants its permissions only inside the team where it is assigned.
       </p>
       <form
         aria-label="Create role"
-        className="flex flex-wrap items-end gap-3 text-sm"
+        className="flex flex-wrap items-end gap-3"
         onSubmit={(event) => {
           event.preventDefault();
           const form = new FormData(event.currentTarget);
           create.mutate({ code: String(form.get("code") ?? "").trim(), name: String(form.get("name") ?? "") });
         }}
       >
-        <label className="flex flex-col gap-1">
-          Code
-          <input name="code" required maxLength={63} pattern="[a-z][a-z0-9_\-]*" className={INPUT} />
-        </label>
-        <label className="flex flex-col gap-1">
-          Name
-          <input name="name" required maxLength={150} className={INPUT} />
-        </label>
-        <button type="submit" className={PRIMARY} disabled={create.isPending}>
+        <Field label="Code">
+          <Input name="code" required maxLength={63} pattern="[a-z][a-z0-9_\-]*" className="w-50" />
+        </Field>
+        <Field label="Name">
+          <Input name="name" required maxLength={150} className="w-64" />
+        </Field>
+        <Button type="submit" variant="primary" disabled={create.isPending}>
           Create role
-        </button>
-        {create.isSuccess && <p role="status">Role created.</p>}
+        </Button>
       </form>
+      {create.isSuccess && <Notice tone="success">Role created.</Notice>}
       <ErrorText error={create.error} />
       <form
         role="search"
         aria-label="Filter roles"
-        className="flex items-end gap-2 text-sm"
+        className="flex flex-wrap items-end gap-2"
         onSubmit={(event) => {
           event.preventDefault();
           setQ(String(new FormData(event.currentTarget).get("q") ?? "").trim());
           setPage(1);
         }}
       >
-        <label className="flex flex-col gap-1">
-          Code or name
-          <input name="q" maxLength={100} className={INPUT} />
-        </label>
-        <button type="submit" className={BUTTON}>
-          Search
-        </button>
+        <Field label="Code or name">
+          <Input name="q" maxLength={100} className="w-56" />
+        </Field>
+        <Button type="submit">Search</Button>
       </form>
       <QueryState query={roles} label="roles" />
       {roles.data &&
         (roles.data.results.length === 0 ? (
-          <p>No roles match.</p>
+          <p className="m-0">No roles match.</p>
         ) : (
           <>
             <RoleTable roles={roles.data.results} />
@@ -147,43 +134,40 @@ export function RoleDetailView({ id }: { id: string }) {
     .filter((code) => PERMISSION_CODES.includes(code) && !current.permissions.includes(code));
 
   return (
-    <section className="space-y-6" aria-label="Role">
-      <h1 className="text-2xl font-semibold">
+    <section className="flex flex-col gap-6" aria-label="Role">
+      <PageTitle>
         {current.name} ({current.code})
-      </h1>
+      </PageTitle>
       <form
         aria-label="Rename role"
         key={current.name}
-        className="flex items-end gap-2 text-sm"
+        className="flex flex-wrap items-end gap-2"
         onSubmit={(event) => {
           event.preventDefault();
           rename.mutate(String(new FormData(event.currentTarget).get("name") ?? ""));
         }}
       >
-        <label className="flex flex-col gap-1">
-          Name
-          <input name="name" required maxLength={150} defaultValue={current.name} className={INPUT} />
-        </label>
-        <button type="submit" className={BUTTON} disabled={rename.isPending}>
+        <Field label="Name">
+          <Input name="name" required maxLength={150} defaultValue={current.name} className="w-64" />
+        </Field>
+        <Button type="submit" disabled={rename.isPending}>
           Rename
-        </button>
+        </Button>
       </form>
       <ErrorText error={rename.error} />
-      <section aria-label="Permissions" className="space-y-2 text-sm">
-        <h2 className="text-lg font-semibold">Permissions</h2>
-        <p>Changes apply to every membership that holds this role, in every team.</p>
+      <section aria-label="Permissions" className="flex flex-col gap-3">
+        <SectionTitle>Permissions</SectionTitle>
+        <p className="m-0 text-small">Changes apply to every membership that holds this role, in every team.</p>
         {current.permissions.length === 0 ? (
-          <p>No permissions.</p>
+          <p className="m-0">No permissions.</p>
         ) : (
-          <ul className="space-y-1">
+          <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-ui">
             {current.permissions.map((code) => (
               <li key={code} className="flex items-center gap-2">
-                <span>
-                  {PERMISSION_LABELS[code]} <code className="text-neutral-600">{code}</code>
-                </span>
-                <button type="button" className="underline" onClick={() => setRevoking(code)}>
+                {PERMISSION_LABELS[code]} <code className="font-mono text-[13px] text-ink-muted">{code}</code>
+                <Button variant="link" onClick={() => setRevoking(code)}>
                   Revoke
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
@@ -200,25 +184,24 @@ export function RoleDetailView({ id }: { id: string }) {
         {offered.length > 0 && (
           <form
             aria-label="Grant permission"
-            className="flex items-end gap-2"
+            className="flex flex-wrap items-end gap-2"
             onSubmit={(event) => {
               event.preventDefault();
               grant.mutate(String(new FormData(event.currentTarget).get("permission")) as PermissionCode);
             }}
           >
-            <label className="flex flex-col gap-1">
-              Permission
-              <select name="permission" className={INPUT}>
+            <Field label="Permission">
+              <Select name="permission" className="w-64">
                 {offered.map((code) => (
                   <option key={code} value={code}>
                     {PERMISSION_LABELS[code]}
                   </option>
                 ))}
-              </select>
-            </label>
-            <button type="submit" className={BUTTON} disabled={grant.isPending}>
+              </Select>
+            </Field>
+            <Button type="submit" disabled={grant.isPending}>
               Grant
-            </button>
+            </Button>
           </form>
         )}
         <ErrorText error={grant.error ?? revoke.error} />

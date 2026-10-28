@@ -1,9 +1,10 @@
 import { RoleList } from "@/components/admin/roles";
+import { PageTitle } from "@/components/ui";
 
 export default function AdminRolesPage() {
   return (
     <>
-      <h1 className="text-2xl font-semibold">Roles and permissions</h1>
+      <PageTitle className="sr-only">Roles and permissions</PageTitle>
       <RoleList />
     </>
   );
