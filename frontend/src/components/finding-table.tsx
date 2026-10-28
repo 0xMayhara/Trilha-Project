@@ -1,11 +1,9 @@
 import Link from "next/link";
 
-import { FindingStatusBadge, LevelBadge, Table, TableBody, TableHead, Td, Tr } from "@/components/ui";
-import { CRITICALITY_LABELS, ENVIRONMENT_LABELS, KIND_LABELS, exposureSummary, hardeningSummary } from "@/lib/assets";
+import { Facts, FindingStatusBadge, LevelBadge, Panel, Table, TableBody, TableHead, Td, Tr } from "@/components/ui";
+import { ENVIRONMENT_LABELS, KIND_LABELS, exposureSummary, hardeningSummary } from "@/lib/assets";
 import {
   CATEGORY_LABELS,
-  FINDING_STATUS_LABELS,
-  SEVERITY_LABELS,
   userLabel,
   type Finding,
   type FindingSummary,
@@ -46,27 +44,24 @@ export function FindingTable({ findings }: { findings: FindingSummary[] }) {
     </Table>
   );
 }
-function Facts({ facts }: { facts: [string, string][] }) {
-  return (
-    <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
-      {facts.map(([term, value]) => (
-        <div key={term} className="contents">
-          <dt className="font-semibold">{term}</dt>
-          <dd className="whitespace-pre-wrap">{value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
 
 export function FindingFacts({ finding }: { finding: Finding }) {
   return (
     <Facts
-      facts={[
-        ["Severity", SEVERITY_LABELS[finding.severity]],
+      items={[
+        ["Severity", <LevelBadge key="severity" level={finding.severity} />],
         ["Category", CATEGORY_LABELS[finding.category]],
-        ["Status", FINDING_STATUS_LABELS[finding.status]],
-        ["CVE IDs", finding.cve_ids.join(", ") || "None"],
+        ["Status", <FindingStatusBadge key="status" status={finding.status} />],
+        [
+          "CVE IDs",
+          finding.cve_ids.length ? (
+            <span key="cves" className="font-mono text-[13px]">
+              {finding.cve_ids.join(", ")}
+            </span>
+          ) : (
+            "None"
+          ),
+        ],
         ["Team", `${finding.team.name} (${finding.team.code})`],
         ["Assignee", finding.assignee ? userLabel(finding.assignee) : "Unassigned"],
         ["Reported by", userLabel(finding.reported_by)],
@@ -81,24 +76,24 @@ export function FindingFacts({ finding }: { finding: Finding }) {
 export function FindingAsset({ finding }: { finding: Finding }) {
   const asset = finding.asset;
   return (
-    <section aria-label="Asset" className="space-y-2">
-      <h2 className="text-lg font-semibold">
-        Asset:{" "}
-        <Link href={`/assets/${asset.id}`} className="underline">
-          {asset.name}
-        </Link>
-        {asset.status === "retired" && " (retired)"}
-      </h2>
+    <Panel
+      title={
+        <>
+          Asset: <Link href={`/assets/${asset.id}`}>{asset.name}</Link>
+          {asset.status === "retired" && " (retired)"}
+        </>
+      }
+    >
       <Facts
-        facts={[
+        items={[
           ["Kind", KIND_LABELS[asset.kind]],
           ["Environment", asset.environment ? ENVIRONMENT_LABELS[asset.environment] : "Unspecified"],
-          ["Criticality", asset.criticality ? CRITICALITY_LABELS[asset.criticality] : "Unassessed"],
+          ["Criticality", <LevelBadge key="criticality" level={asset.criticality} />],
           ["Hardening (declared)", hardeningSummary(asset.hardening_status)],
           ["Internet exposure (declared)", exposureSummary(asset.internet_exposure)],
           ["Operating system", [asset.os_label, asset.os_version].filter(Boolean).join(" ") || "Unspecified"],
         ]}
       />
-    </section>
+    </Panel>
   );
 }
