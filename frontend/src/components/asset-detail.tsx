@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 
 import { AssetForm } from "@/components/asset-form";
 import { AssetFacts } from "@/components/asset-table";
-import { ReportFinding } from "@/components/finding-report";
+import { canReport, ReportFinding } from "@/components/finding-report";
+import { Button, Field, Notice, PageTitle, Select } from "@/components/ui";
 import { ApiError } from "@/lib/api-client";
 import {
   accessTeamsKey,
@@ -31,11 +32,10 @@ import { fetchFindings, findingListKey } from "@/lib/findings";
 
 type Pending = { kind: "retire" } | { kind: "restore" } | { kind: "transfer"; teamId: string; label: string };
 
-const BUTTON = "rounded border border-neutral-400 px-3 py-1 text-sm disabled:opacity-60";
-
 export function AssetDetail({ id }: { id: string }) {
   const client = useQueryClient();
   const [editing, setEditing] = useState(false);
+  const [reporting, setReporting] = useState(false);
   const [confirming, setConfirming] = useState<Pending | null>(null);
   const { data: user } = useQuery({ queryKey: SESSION_QUERY_KEY, queryFn: fetchSessionUser });
   const userId = user?.id ?? "";
@@ -75,8 +75,13 @@ export function AssetDetail({ id }: { id: string }) {
   }, [asset.error, catalog.error, client]);
 
   if (!user) return null;
-  if (asset.isPending) return <p role="status">Loading asset...</p>;
-  if (asset.isError) return <p role="alert">{assetErrorMessage(asset.error)}</p>;
+  if (asset.isPending)
+    return (
+      <p role="status" className="m-0 text-ink-muted">
+        Loading asset...
+      </p>
+    );
+  if (asset.isError) return <Notice tone="error">{assetErrorMessage(asset.error)}</Notice>;
   const current = asset.data;
   const teamId = current.team.id;
   const canEdit = current.status === "active" && can(access.data, teamId, "assets.view_asset", "assets.change_asset");
@@ -100,48 +105,36 @@ export function AssetDetail({ id }: { id: string }) {
   }
 
   return (
-    <section className="space-y-4" aria-label="Asset">
-      <h1 className="text-2xl font-semibold">{current.name}</h1>
+    <section className="flex flex-col gap-6" aria-label="Asset">
+      <PageTitle>{current.name}</PageTitle>
       <AssetFacts asset={current} />
       {mutation.isError && (
-        <div role="alert" className="space-y-2 text-sm text-red-700">
-          <p>{assetErrorMessage(mutation.error)}</p>
+        <Notice tone="error">
+          <p className="m-0">{assetErrorMessage(mutation.error)}</p>
           {conflict && (
-            <button
-              type="button"
-              className={BUTTON}
-              onClick={() => {
-                mutation.reset();
-                setConfirming(null);
-                void asset.refetch();
-              }}
-            >
-              Reload asset
-            </button>
+            <div>
+              <Button
+                onClick={() => {
+                  mutation.reset();
+                  setConfirming(null);
+                  void asset.refetch();
+                }}
+              >
+                Reload asset
+              </Button>
+            </div>
           )}
-        </div>
+        </Notice>
       )}
-      <div className="flex flex-wrap gap-2">
-        {canEdit && !editing && (
-          <button type="button" className={BUTTON} onClick={() => setEditing(true)}>
-            Edit
-          </button>
-        )}
-        {canRetire && current.status === "active" && (
-          <button type="button" className={BUTTON} onClick={() => confirm({ kind: "retire" })}>
-            Retire
-          </button>
-        )}
-        {canRetire && current.status === "retired" && (
-          <button type="button" className={BUTTON} onClick={() => confirm({ kind: "restore" })}>
-            Restore
-          </button>
-        )}
+      <div className="flex flex-wrap items-center gap-2">
+        {canEdit && !editing && <Button onClick={() => setEditing(true)}>Edit</Button>}
+        {canRetire && current.status === "active" && <Button onClick={() => confirm({ kind: "retire" })}>Retire</Button>}
+        {canRetire && current.status === "retired" && <Button onClick={() => confirm({ kind: "restore" })}>Restore</Button>}
+        {canReport(current, access.data) && !reporting && <Button onClick={() => setReporting(true)}>Report finding</Button>}
       </div>
-      <ReportFinding asset={current} access={access.data} />
       {destinations.length > 0 && (
         <form
-          className="flex items-end gap-2 text-sm"
+          className="flex flex-wrap items-end gap-2"
           onSubmit={(event) => {
             event.preventDefault();
             const teamId = String(new FormData(event.currentTarget).get("team_id") ?? "");
@@ -149,24 +142,21 @@ export function AssetDetail({ id }: { id: string }) {
             if (team) confirm({ kind: "transfer", teamId, label: `${team.name} (${team.code})` });
           }}
         >
-          <label className="flex flex-col gap-1">
-            Transfer to team
-            <select name="team_id" className="rounded border border-neutral-300 px-2 py-1">
+          <Field label="Transfer to team">
+            <Select name="team_id">
               {destinations.map((team) => (
                 <option key={team.id} value={team.id}>
                   {team.name} ({team.code})
                 </option>
               ))}
-            </select>
-          </label>
-          <button type="submit" className={BUTTON}>
-            Transfer
-          </button>
+            </Select>
+          </Field>
+          <Button type="submit">Transfer</Button>
         </form>
       )}
       {confirming && (
-        <div role="group" aria-label="Confirm action" className="space-y-2 rounded border border-amber-400 p-3 text-sm">
-          <p>
+        <Notice tone="confirm">
+          <p className="m-0">
             {confirming.kind === "retire" && "Retire this asset? It leaves the active inventory and becomes read-only."}
             {confirming.kind === "restore" && "Restore this asset to the active inventory?"}
             {confirming.kind === "transfer" &&
@@ -175,21 +165,18 @@ export function AssetDetail({ id }: { id: string }) {
                   "The findings and their logbooks move with it; members of the current team lose access to them."
                 : `Transfer this asset to ${confirming.label}? Members of the current team may lose access to it.`)}
           </p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className={BUTTON}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="primary"
               autoFocus
               disabled={mutation.isPending || (confirming.kind === "transfer" && findings.isPending)}
               onClick={run}
             >
               Confirm
-            </button>
-            <button type="button" className={BUTTON} onClick={() => setConfirming(null)}>
-              Cancel
-            </button>
+            </Button>
+            <Button onClick={() => setConfirming(null)}>Cancel</Button>
           </div>
-        </div>
+        </Notice>
       )}
       {editing && (
         <AssetForm
@@ -201,6 +188,7 @@ export function AssetDetail({ id }: { id: string }) {
           onSubmit={(input: AssetInput) => mutation.mutate(() => updateAsset(current, input))}
         />
       )}
+      {reporting && <ReportFinding asset={current} access={access.data} onCancel={() => setReporting(false)} />}
     </section>
   );
 }

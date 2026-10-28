@@ -197,7 +197,11 @@ describe("findings client contracts", () => {
       <FindingForm finding={findingSchema.parse(finding)} errors={{ title: ["Too long."] }} pending={false} submitLabel="Save" onSubmit={() => {}} />,
     );
     expect(markup).toContain("Too long.");
-    expect(markup).toContain('aria-describedby="title-error"');
+    // The title input is described by the element that holds its error.
+    const titleError = /<input[^>]*aria-describedby="([^"]+)"[^>]*name="title"|<input[^>]*name="title"[^>]*aria-describedby="([^"]+)"/.exec(markup);
+    const errorId = titleError?.[1] ?? titleError?.[2];
+    expect(errorId).toBeTruthy();
+    expect(markup).toMatch(new RegExp(`id="${errorId}"[^>]*>Too long.`));
     expect(markup).toContain("CVE-2024-3094");
     expect(markup).toContain("Never paste passwords, keys or personal data");
   });

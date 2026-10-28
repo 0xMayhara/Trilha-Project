@@ -1,8 +1,8 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 
-import { AssetStatusBadge, LevelBadge, Table, TableBody, TableHead, Td, Tr } from "@/components/ui";
+import { AssetStatusBadge, Facts, LevelBadge, Table, TableBody, TableHead, Td, Tr } from "@/components/ui";
 import {
-  CRITICALITY_LABELS,
   ENVIRONMENT_LABELS,
   KIND_LABELS,
   exposureSummary,
@@ -60,7 +60,7 @@ export function AssetTable({ assets }: { assets: Asset[] }) {
 }
 
 export function AssetFacts({ asset }: { asset: Asset }) {
-  const facts: [string, string][] = [
+  const facts: [string, ReactNode][] = [
     ["Team", `${asset.team.name} (${asset.team.code})`],
     ["Kind", KIND_LABELS[asset.kind]],
     ["Hostname", asset.hostname || "None"],
@@ -68,20 +68,11 @@ export function AssetFacts({ asset }: { asset: Asset }) {
     ["Operating system", osSummary(asset)],
     ...(asset.operating_system ? [["Legacy OS text", asset.operating_system] as [string, string]] : []),
     ["Environment", asset.environment ? ENVIRONMENT_LABELS[asset.environment] : "Unspecified"],
-    ["Criticality", asset.criticality ? CRITICALITY_LABELS[asset.criticality] : "Unassessed"],
+    ["Criticality", <LevelBadge key="criticality" level={asset.criticality} />],
     // Declared by the team, not verified (SPEC-0007 BR-25).
     ["Hardening (declared)", hardeningSummary(asset.hardening_status)],
     ["Internet exposure (declared)", exposureSummary(asset.internet_exposure)],
-    ["Status", asset.status === "active" ? "Active" : "Retired"],
+    ["Status", <AssetStatusBadge key="status" status={asset.status} />],
   ];
-  return (
-    <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
-      {facts.map(([term, value]) => (
-        <div key={term} className="contents">
-          <dt className="font-semibold">{term}</dt>
-          <dd>{value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
+  return <Facts items={facts} />;
 }
