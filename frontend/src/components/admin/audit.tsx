@@ -1,9 +1,30 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { Fragment, useState, type FormEvent, type ReactNode } from "react";
 
 import { QueryState, useAdminQuery } from "@/components/admin/shared";
-import { Badge, Button, Field, FilterBar, Input, Pager, Select, Sub, Table, TableBody, TableHead, Td, Tr } from "@/components/ui";
+import {
+  AuditChangesTable,
+  AuditMetadataFacts,
+  AuditRawJson,
+  auditSummary,
+  Badge,
+  Button,
+  DetailRow,
+  Facts,
+  Field,
+  FilterBar,
+  Input,
+  Pager,
+  Select,
+  Sub,
+  Table,
+  TableBody,
+  TableHead,
+  Td,
+  Tr,
+  type AuditChanges,
+} from "@/components/ui";
 import { AUDIT_FILTER_KEYS, fetchAudit, type AuditEntry, type Filters } from "@/lib/admin";
 
 type AuditFilters = Filters<(typeof AUDIT_FILTER_KEYS)[number]>;
@@ -25,35 +46,109 @@ export function readAuditFilters(form: FormData): AuditFilters {
   return filters;
 }
 
-/** Changes and metadata are stored data: shown as preformatted text, never interpreted (SEC-26). */
+/** API `changes` are `{field: {before, after}}`; any other shape is left to the raw JSON and never throws (SPEC-0031 BR-03). */
+export function toAuditChanges(changes: Record<string, unknown>): AuditChanges {
+  return Object.fromEntries(
+    Object.entries(changes).flatMap(([field, value]) => {
+      if (!value || typeof value !== "object" || Array.isArray(value) || !("before" in value || "after" in value)) return [];
+      const { before = null, after = null } = value as { before?: unknown; after?: unknown };
+      return [[field, [before, after] as const]];
+    }),
+  );
+}
+
+const when = (entry: AuditEntry) => new Date(entry.occurred_at).toLocaleString();
+const Mono = ({ children, muted = false }: { children: ReactNode; muted?: boolean }) => (
+  <code className={`font-mono text-code ${muted ? "text-ink-muted" : ""}`}>{children}</code>
+);
+const H3 = ({ children }: { children: ReactNode }) => <h3 className="m-0 text-label text-ink-muted">{children}</h3>;
+const withId = (name: string, id: string | null) => (id ? <>{name} <Mono muted>{id}</Mono></> : name);
+
+/** The open row's detail. Stored data, shown as text only (SEC-26; SPEC-0031 SEC-01, SEC-02). */
+export function AuditDetail({ entry }: { entry: AuditEntry }) {
+  const { actor, resource } = entry;
+  return (
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,4fr)]">
+      <div className="flex flex-col gap-2">
+        <H3>Changes</H3>
+        <AuditChangesTable changes={toAuditChanges(entry.changes)} />
+      </div>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2">
+          <H3>Event</H3>
+          <Facts
+            items={[
+              ["Event ID", <Mono key="e">{entry.event_id}</Mono>],
+              ["Actor", withId(actor.label || actor.type, actor.id)],
+              ["Resource", resource.type ? withId(resource.type, resource.id) : "None"],
+              ["Source", entry.source],
+              ["Request", entry.request_id ? <Mono key="r">{entry.request_id}</Mono> : "None"],
+              ["Client IP", entry.client_ip ? <Mono key="c">{entry.client_ip}</Mono> : "None"],
+            ]}
+          />
+        </div>
+        <div className="flex flex-col gap-2">
+          <H3>Metadata</H3>
+          <AuditMetadataFacts metadata={entry.metadata} />
+        </div>
+        <AuditRawJson value={{ changes: entry.changes, metadata: entry.metadata }} />
+      </div>
+    </div>
+  );
+}
+
+/** One line per event with a text summary; one row open at a time (SPEC-0031 BR-02, BR-05). */
 export function AuditTable({ entries }: { entries: AuditEntry[] }) {
+  const [open, setOpen] = useState<string | null>(null);
   return (
     <Table caption="Audit events">
-      <TableHead columns={["When", "Actor", "Action", "Outcome", "Resource", "Source", "Details"]} />
+      <TableHead columns={["When", "Actor", "Action", "Outcome", "Details"]} />
       <TableBody>
-        {entries.map((entry) => (
-          <Tr key={entry.event_id}>
-            <Td>{new Date(entry.occurred_at).toLocaleString()}</Td>
-            <Td>
-              {entry.actor.label || entry.actor.type}
-              {entry.actor.id && <Sub className="font-mono">{entry.actor.id}</Sub>}
-            </Td>
-            <Td>{entry.action}</Td>
-            <Td>
-              <Badge tone={entry.outcome === "success" ? "ok" : "warn"}>{entry.outcome}</Badge>
-            </Td>
-            <Td>
-              {entry.resource.type || "None"}
-              {entry.resource.id && <Sub className="font-mono">{entry.resource.id}</Sub>}
-            </Td>
-            <Td>{entry.source}</Td>
-            <Td>
-              <pre className="m-0 max-w-90 overflow-x-auto font-mono text-[12px] leading-4 whitespace-pre-wrap">
-                {JSON.stringify({ changes: entry.changes, metadata: entry.metadata }, null, 2)}
-              </pre>
-            </Td>
-          </Tr>
-        ))}
+        {entries.map((entry) => {
+          const isOpen = open === entry.event_id;
+          const summary = auditSummary(toAuditChanges(entry.changes), entry.metadata);
+          const detailId = `audit-${entry.event_id}`;
+          return (
+            <Fragment key={entry.event_id}>
+              <Tr className={isOpen ? "!bg-brand-tint" : undefined}>
+                <Td className="whitespace-nowrap">{when(entry)}</Td>
+                <Td>
+                  {entry.actor.label || entry.actor.type}
+                  {entry.actor.id && <Sub className="font-mono">{entry.actor.id}</Sub>}
+                </Td>
+                <Td>
+                  <Mono>{entry.action}</Mono>
+                </Td>
+                <Td>
+                  <Badge tone={entry.outcome === "success" ? "ok" : "warn"}>{entry.outcome}</Badge>
+                </Td>
+                <Td className="max-w-80">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="min-w-0 truncate text-small" title={summary}>
+                      {summary}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="link"
+                      className="shrink-0"
+                      aria-expanded={isOpen}
+                      aria-controls={detailId}
+                      aria-label={`${isOpen ? "Hide" : "Show"} details of ${entry.action} at ${when(entry)}`}
+                      onClick={() => setOpen(isOpen ? null : entry.event_id)}
+                    >
+                      {isOpen ? "Hide" : "Show"}
+                    </Button>
+                  </div>
+                </Td>
+              </Tr>
+              {isOpen && (
+                <DetailRow colSpan={5} id={detailId}>
+                  <AuditDetail entry={entry} />
+                </DetailRow>
+              )}
+            </Fragment>
+          );
+        })}
       </TableBody>
     </Table>
   );
@@ -115,7 +210,8 @@ export function AuditTrail() {
           <p className="m-0">No audit events match.</p>
         ) : (
           <>
-            <AuditTable entries={events.data.results} />
+            {/* A new filter or page remounts the table, which closes the open row (SPEC-0031 BR-05). */}
+            <AuditTable key={JSON.stringify([filters, page])} entries={events.data.results} />
             <Pager
               label="events"
               page={page}

@@ -60,3 +60,17 @@ export function Td({ className, ...props }: TdHTMLAttributes<HTMLTableCellElemen
 export function Sub({ className, ...props }: HTMLAttributes<HTMLSpanElement>) {
   return <span className={cn("block text-caption text-ink-muted", className)} {...props} />;
 }
+
+/**
+ * Full-width row under an expanded row. Render it right after the row whose
+ * toggle has aria-expanded, and keep only one open at a time.
+ */
+export function DetailRow({ colSpan, id, className, children }: { colSpan: number; id?: string; className?: string; children: ReactNode }) {
+  return (
+    <tr id={id} className="!bg-surface">
+      <td colSpan={colSpan} className={cn("border-b-2 border-brand px-6 py-4", className)}>
+        {children}
+      </td>
+    </tr>
+  );
+}
