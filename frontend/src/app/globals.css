@@ -1,1 +1,94 @@
 @import "tailwindcss";
+
+/* Trilha: Tailwind v4 theme generated from tokens.json. Flat and plain: no shadows, gradients or animation.
+   Spacing uses the default Tailwind scale: space-1..7 = p-1, p-2, p-3, p-4, p-6, p-8, p-12.
+   IBM Plex is self-hosted by next/font in the root layout (CSP font-src 'self'). */
+
+@theme static {
+  /* Fonts */
+  --font-sans: var(--font-plex-sans), Verdana, "Segoe UI", system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), "Courier New", ui-monospace, monospace;
+
+  /* Colors */
+  --color-brand: #511150;
+  --color-brand-strong: #3a0b39;
+  --color-brand-tint: #f3ebf3;
+  --color-on-brand: #ffffff;
+  --color-on-brand-muted: #e8d9e7;
+  --color-page: #f5f3f1;
+  --color-surface: #ffffff;
+  --color-surface-sunken: #ebe7e9;
+  --color-stripe: #faf8f9;
+  --color-border: #cfc8cd;
+  --color-border-strong: #7d747b;
+  --color-ink: #1e191e;
+  --color-ink-muted: #5a525a;
+  --color-link-visited: #6a2f68;
+  --color-focus: #0b57a4;
+  --color-danger: #8c1c1c;
+  --color-danger-tint: #fbe9e9;
+  --color-danger-border: #d9a3a3;
+  --color-warning: #7a4200;
+  --color-warning-tint: #fcf1de;
+  --color-warning-border: #dcb77a;
+  --color-caution: #5f4b00;
+  --color-caution-tint: #f6efcb;
+  --color-caution-border: #cdbb5e;
+  --color-success: #1f5a33;
+  --color-success-tint: #e4f2e8;
+  --color-success-border: #9cc8a8;
+  --color-info: #1d4f7c;
+  --color-info-tint: #e4edf6;
+  --color-info-border: #9fbad6;
+
+  /* Type scale: text-title, text-ui, text-label... each sets size, line height and weight */
+  --text-title: 26px;
+  --text-title--line-height: 32px;
+  --text-title--font-weight: 600;
+  --text-stat: 28px;
+  --text-stat--line-height: 34px;
+  --text-stat--font-weight: 600;
+  --text-heading: 19px;
+  --text-heading--line-height: 26px;
+  --text-heading--font-weight: 600;
+  --text-subheading: 15px;
+  --text-subheading--line-height: 22px;
+  --text-subheading--font-weight: 600;
+  --text-body: 15px;
+  --text-body--line-height: 22px;
+  --text-body--font-weight: 400;
+  --text-ui: 14px;
+  --text-ui--line-height: 20px;
+  --text-ui--font-weight: 400;
+  --text-label: 13px;
+  --text-label--line-height: 18px;
+  --text-label--font-weight: 600;
+  --text-small: 13px;
+  --text-small--line-height: 18px;
+  --text-small--font-weight: 400;
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-caption--font-weight: 400;
+  --text-brand-name: 20px;
+  --text-brand-name--line-height: 24px;
+  --text-brand-name--font-weight: 700;
+
+  /* Radii: square by default, 2px on controls, 4px on the dialog */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+
+  /* No shadows anywhere */
+  --shadow-*: initial;
+  --inset-shadow-*: initial;
+  --drop-shadow-*: initial;
+}
+
+/* After every screen is migrated: remove the default palette so only the tokens remain.
+@theme { --color-*: initial; } */
+
+@layer base {
+  html { color-scheme: light; }
+  body { @apply bg-page font-sans text-body text-ink antialiased; }
+  a { @apply text-brand underline visited:text-link-visited; }
+  :focus-visible { @apply outline-2 outline-offset-2 outline-focus; }
+}

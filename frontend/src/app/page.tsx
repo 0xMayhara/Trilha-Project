@@ -1,11 +1,14 @@
 import { HealthStatus } from "@/components/health-status";
+import { Page, PageTitle, Panel } from "@/components/ui";
 
 export default function HomePage() {
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-4 px-4 py-16">
-      <h1 className="text-2xl font-semibold">Trilha</h1>
-      <p className="text-neutral-600">Security remediation management platform.</p>
-      <HealthStatus />
-    </main>
+    <Page width="medium">
+      <PageTitle>Trilha</PageTitle>
+      <p className="m-0 text-ink-muted">Security remediation management platform.</p>
+      <Panel title="Status">
+        <HealthStatus />
+      </Panel>
+    </Page>
   );
 }

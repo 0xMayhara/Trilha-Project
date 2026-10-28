@@ -2,9 +2,10 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 
+import { AppHeader, Notice, type NavKey } from "@/components/ui";
 import { clearOwnAccess } from "@/lib/access";
 import { clearAdminQueries, fetchPlatformSelf, platformKey, type PlatformSelf } from "@/lib/admin";
 import { clearAssetQueries } from "@/lib/assets";
@@ -18,17 +19,44 @@ import {
   SESSION_QUERY_KEY,
 } from "@/lib/auth";
 
-/** Shown from the server's platform state only; hiding it is UX, the API decides (SEC-32). */
-export function AdministrationLink({ platform }: { platform: PlatformSelf | undefined }) {
-  return platform?.is_admin === true ? (
-    <Link href="/admin" className="underline">
-      Administration
-    </Link>
-  ) : null;
+const SECTIONS: [prefix: string, key: NavKey][] = [
+  ["/admin", "admin"],
+  ["/assets", "assets"],
+  ["/findings", "findings"],
+  ["/account/access", "access"],
+  ["/account/password", "password"],
+];
+
+function navKey(pathname: string): NavKey | undefined {
+  return SECTIONS.find(([prefix]) => pathname === prefix || pathname.startsWith(`${prefix}/`))?.[1];
+}
+
+/** Administration is shown from the server's platform state only; hiding it is UX, the API decides (SEC-32). */
+export function SiteHeader({
+  username,
+  platform,
+  current,
+  onLogout,
+}: {
+  username: string | null;
+  platform: PlatformSelf | undefined;
+  current?: NavKey;
+  onLogout?: () => void;
+}) {
+  return (
+    <AppHeader
+      username={username}
+      isAdmin={platform?.is_admin === true}
+      current={current}
+      LinkComponent={Link}
+      onLogout={onLogout}
+    />
+  );
 }
 
 export function AuthNav() {
   const router = useRouter();
+  const pathname = usePathname();
   const queryClient = useQueryClient();
   const { data: user } = useQuery({ queryKey: SESSION_QUERY_KEY, queryFn: fetchSessionUser });
   const platform = useQuery({
@@ -64,36 +92,22 @@ export function AuthNav() {
   if (user === undefined) {
     return null;
   }
-  if (user === null) {
-    return (
-      <Link href="/login" className="text-sm underline">
-        Log in
-      </Link>
-    );
-  }
   return (
-    <div className="flex items-center gap-4 text-sm">
-      <span className="text-neutral-600">Signed in as {user.username}</span>
-      <AdministrationLink platform={platform.data} />
-      <Link href="/assets" className="underline">Assets</Link>
-      <Link href="/findings" className="underline">Findings</Link>
-      <Link href="/account/access" className="underline">Your access</Link>
-      <Link href="/account/password" className="underline">
-        Change password
-      </Link>
-      <button
-        type="button"
-        className="underline"
-        disabled={logout.isPending}
-        onClick={() => logout.mutate()}
-      >
-        Log out
-      </button>
+    <>
+      <SiteHeader
+        username={user?.username ?? null}
+        platform={platform.data}
+        current={navKey(pathname)}
+        onLogout={() => {
+          // AppHeader has no disabled state, so a second click while pending is ignored here.
+          if (!logout.isPending) logout.mutate();
+        }}
+      />
       {logout.isError && (
-        <span role="alert" className="text-red-700">
-          {authErrorMessage(logout.error)}
-        </span>
+        <div className="mx-auto max-w-6xl px-8 pt-4">
+          <Notice tone="error">{authErrorMessage(logout.error)}</Notice>
+        </div>
       )}
-    </div>
+    </>
   );
 }
