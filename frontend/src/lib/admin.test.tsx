@@ -10,7 +10,7 @@ import { StepUpProvider } from "@/components/admin/step-up";
 import { MemberTable, TeamTable } from "@/components/admin/teams";
 import { RoleTable } from "@/components/admin/roles";
 import { UserFacts, UserTable } from "@/components/admin/users";
-import { AdministrationLink } from "@/components/auth-nav";
+import { SiteHeader } from "@/components/auth-nav";
 import { ACCESS_QUERY_KEY, accessQueryKey } from "@/lib/access";
 import {
   ADMIN_QUERY_KEY,
@@ -186,7 +186,7 @@ describe("SPEC-0010 administration client", () => {
     expect(JSON.stringify(client.getQueryCache().getAll().map((query) => query.state.data))).not.toContain("canary-token");
     // The panel shows it as a read-only field, with the delivery warning, and nothing else keeps it.
     const panel = renderToStaticMarkup(<OneTimeLink link={link} onDone={() => undefined} />);
-    expect(panel).toMatch(/<input readOnly=""[^>]*value="https:\/\/trilha\.example/);
+    expect(panel).toMatch(/<input[^>]*readOnly=""[^>]*value="https:\/\/trilha\.example/);
     expect(panel).toContain("authorized internal channel");
     expect(panel).toContain("60 minutes");
     const sources = readdirSync(join(process.cwd(), "src/components/admin")).map((file) =>
@@ -249,9 +249,10 @@ describe("SPEC-0010 administration client", () => {
   });
 
   it("test_admin_nav_shown_only_from_platform_state", () => {
-    expect(renderToStaticMarkup(<AdministrationLink platform={{ is_admin: true, position: null, reauthenticated_until: null }} />)).toContain('href="/admin"');
+    const admin = { is_admin: true, position: null, reauthenticated_until: null };
+    expect(renderToStaticMarkup(<SiteHeader username="ana" platform={admin} />)).toContain('href="/admin"');
     for (const platform of [undefined, { is_admin: false, position: "engineer" as const, reauthenticated_until: null }]) {
-      expect(renderToStaticMarkup(<AdministrationLink platform={platform} />)).toBe("");
+      expect(renderToStaticMarkup(<SiteHeader username="ana" platform={platform} />)).not.toContain('href="/admin"');
     }
   });
 

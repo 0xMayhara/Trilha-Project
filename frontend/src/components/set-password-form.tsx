@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 
 import { NewPasswordFields, readNewPassword } from "@/components/new-password-fields";
+import { Button, Form, Notice } from "@/components/ui";
 import { authErrorMessage, setPassword } from "@/lib/auth";
 import { readPasswordLink, removeFragment } from "@/lib/password-link";
 
@@ -23,16 +24,16 @@ export default function SetPasswordForm() {
 
   if (link === null) {
     return (
-      <p role="alert" className="text-sm text-red-700">
-        This link is incomplete. Ask an administrator for a new one.
-      </p>
+      <Notice tone="error">This link is incomplete. Ask an administrator for a new one.</Notice>
     );
   }
   if (submit.isSuccess) {
     return (
-      <p role="status" className="text-sm text-green-700">
-        Your password is set. <Link href="/login" className="underline">Log in</Link>.
-      </p>
+      <Notice tone="success">
+        <p className="m-0">
+          Your password is set. <Link href="/login">Log in</Link>.
+        </p>
+      </Notice>
     );
   }
 
@@ -46,20 +47,12 @@ export default function SetPasswordForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-3">
-      <NewPasswordFields />
-      {(mismatch ?? submit.isError) && (
-        <p role="alert" className="text-sm text-red-700">
-          {mismatch ?? authErrorMessage(submit.error)}
-        </p>
-      )}
-      <button
-        type="submit"
-        disabled={submit.isPending}
-        className="rounded bg-neutral-900 px-3 py-2 text-white disabled:opacity-60"
-      >
+    <Form onSubmit={onSubmit} className="max-w-none">
+      <NewPasswordFields mismatch={mismatch} />
+      {submit.isError && <Notice tone="error">{authErrorMessage(submit.error)}</Notice>}
+      <Button type="submit" variant="primary" disabled={submit.isPending}>
         Set password
-      </button>
-    </form>
+      </Button>
+    </Form>
   );
 }

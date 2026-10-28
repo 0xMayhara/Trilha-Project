@@ -1,13 +1,14 @@
 import { AssetRegistration } from "@/components/asset-registration";
 import { RequireSession } from "@/components/require-session";
+import { Page, PageTitle } from "@/components/ui";
 
 export default function NewAssetPage() {
   return (
     <RequireSession>
-      <main className="mx-auto max-w-3xl space-y-6 p-6">
-        <h1 className="text-2xl font-semibold">Register asset</h1>
+      <Page width="medium">
+        <PageTitle>Register asset</PageTitle>
         <AssetRegistration />
-      </main>
+      </Page>
     </RequireSession>
   );
 }

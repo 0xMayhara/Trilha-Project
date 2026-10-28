@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { AssetDetail } from "@/components/asset-detail";
 import { RequireSession } from "@/components/require-session";
+import { Notice, Page } from "@/components/ui";
 
 export default async function AssetPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -9,9 +10,7 @@ export default async function AssetPage({ params }: { params: Promise<{ id: stri
   const valid = z.uuid().safeParse(id).success;
   return (
     <RequireSession>
-      <main className="mx-auto max-w-3xl space-y-6 p-6">
-        {valid ? <AssetDetail id={id} /> : <p role="alert">Asset not found.</p>}
-      </main>
+      <Page>{valid ? <AssetDetail id={id} /> : <Notice tone="error">Asset not found.</Notice>}</Page>
     </RequireSession>
   );
 }

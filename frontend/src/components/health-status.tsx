@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 
+import { Badge } from "@/components/ui";
 import { apiFetch } from "@/lib/api-client";
 
 const healthSchema = z.object({ status: z.literal("ok") });
@@ -14,14 +15,22 @@ export function HealthStatus() {
   });
 
   if (isPending) {
-    return <p className="text-sm text-neutral-500">Checking API…</p>;
-  }
-  if (isError) {
     return (
-      <p role="alert" className="text-sm text-red-700">
-        API unavailable.
+      <p role="status" className="m-0 text-ink-muted">
+        Checking API…
       </p>
     );
   }
-  return <p className="text-sm text-green-700">API status: {data.status}</p>;
+  if (isError) {
+    return (
+      <p role="alert" className="m-0">
+        <Badge tone="warn">Unavailable</Badge> API unavailable.
+      </p>
+    );
+  }
+  return (
+    <p className="m-0">
+      <Badge tone="ok">OK</Badge> API status: {data.status}
+    </p>
+  );
 }

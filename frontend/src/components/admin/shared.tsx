@@ -2,9 +2,11 @@
 
 import { useMutation, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { StepUpProvider, useStepUp } from "@/components/admin/step-up";
+import { AdminTabs, Button, Field, Input, Notice } from "@/components/ui";
 import {
   ADMIN_QUERY_KEY,
   adminErrorMessage,
@@ -15,12 +17,6 @@ import {
   type IssuedLink,
 } from "@/lib/admin";
 import { fetchSessionUser, SESSION_QUERY_KEY } from "@/lib/auth";
-
-export const BUTTON = "rounded border border-neutral-400 px-3 py-1 text-sm disabled:opacity-60";
-export const PRIMARY = "rounded bg-neutral-900 px-3 py-1 text-sm text-white disabled:opacity-60";
-export const INPUT = "rounded border border-neutral-300 px-2 py-1";
-export const CELL = "px-2 py-1";
-export const HEAD = "border-b border-neutral-300 px-2 py-1 font-semibold";
 
 export function useSessionUser() {
   return useQuery({ queryKey: SESSION_QUERY_KEY, queryFn: fetchSessionUser }).data;
@@ -45,9 +41,14 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
   const platform = usePlatform();
   const user = useSessionUser();
   if (!user) return null;
-  if (platform.isPending) return <p role="status">Loading administration...</p>;
-  if (platform.isError) return <p role="alert">{adminErrorMessage(platform.error)}</p>;
-  if (!platform.data.is_admin) return <p role="alert">Administration is not available for your account.</p>;
+  if (platform.isPending)
+    return (
+      <p role="status" className="m-0 text-ink-muted">
+        Loading administration...
+      </p>
+    );
+  if (platform.isError) return <Notice tone="error">{adminErrorMessage(platform.error)}</Notice>;
+  if (!platform.data.is_admin) return <Notice tone="error">Administration is not available for your account.</Notice>;
   return <StepUpProvider>{children}</StepUpProvider>;
 }
 
@@ -85,15 +86,16 @@ export function useAdminMutation<V, R>(fn: (vars: V) => Promise<R>, onSuccess?: 
 }
 
 export function ErrorText({ error }: { error: unknown }) {
-  return error ? (
-    <p role="alert" className="text-sm text-red-700">
-      {adminErrorMessage(error)}
-    </p>
-  ) : null;
+  return error ? <Notice tone="error">{adminErrorMessage(error)}</Notice> : null;
 }
 
 export function QueryState({ query, label }: { query: { isPending: boolean; isError: boolean; error: unknown }; label: string }) {
-  if (query.isPending) return <p role="status">Loading {label}...</p>;
+  if (query.isPending)
+    return (
+      <p role="status" className="m-0 text-ink-muted">
+        Loading {label}...
+      </p>
+    );
   if (query.isError) return <ErrorText error={query.error} />;
   return null;
 }
@@ -111,75 +113,41 @@ export function Confirm({
   onCancel: () => void;
 }) {
   return (
-    <div role="group" aria-label="Confirm action" className="space-y-2 rounded border border-amber-400 p-3 text-sm">
-      <p>{message}</p>
-      <div className="flex gap-2">
-        <button type="button" className={PRIMARY} autoFocus disabled={pending} onClick={onConfirm}>
+    <Notice tone="confirm">
+      <p className="m-0">{message}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="primary" autoFocus disabled={pending} onClick={onConfirm}>
           Confirm
-        </button>
-        <button type="button" className={BUTTON} onClick={onCancel}>
-          Cancel
-        </button>
+        </Button>
+        <Button onClick={onCancel}>Cancel</Button>
       </div>
-    </div>
+    </Notice>
   );
 }
-
-export function Pager({
-  label,
-  page,
-  count,
-  hasPrevious,
-  hasNext,
-  onPage,
-}: {
-  label: string;
-  page: number;
-  count: number;
-  hasPrevious: boolean;
-  hasNext: boolean;
-  onPage: (page: number) => void;
-}) {
-  return (
-    <nav className="flex gap-4 text-sm" aria-label={`${label} pages`}>
-      <button type="button" className="underline disabled:no-underline disabled:opacity-60" disabled={!hasPrevious} onClick={() => onPage(page - 1)}>
-        Previous
-      </button>
-      <span>
-        Page {page} ({count} {label})
-      </span>
-      <button type="button" className="underline disabled:no-underline disabled:opacity-60" disabled={!hasNext} onClick={() => onPage(page + 1)}>
-        Next
-      </button>
-    </nav>
-  );
-}
-
 /** Shows a password link once. It is never cached, stored or put in a URL; Done discards it. */
 export function OneTimeLink({ link, onDone }: { link: IssuedLink; onDone: () => void }) {
   const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle");
   const minutes = Math.round(link.expires_in_seconds / 60);
   return (
-    <section aria-label="One-time password link" className="space-y-2 rounded border border-amber-500 p-3 text-sm">
-      <p className="font-semibold">Password link (shown only once)</p>
-      <p>
+    <Notice tone="confirm" aria-label="One-time password link">
+      <p className="m-0">
+        <strong>Password link (shown only once)</strong>
+      </p>
+      <p className="m-0">
         Deliver this link only through an authorized internal channel. It works once and expires in {minutes} minutes.
       </p>
-      <label className="flex flex-col gap-1">
-        Link
-        <input
+      <Field label="Link">
+        <Input
           readOnly
           value={link.url}
           autoComplete="off"
           spellCheck={false}
           onFocus={(event) => event.currentTarget.select()}
-          className={`${INPUT} font-mono`}
+          className="font-mono text-[13px]"
         />
-      </label>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          className={BUTTON}
+      </Field>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
           onClick={() => {
             navigator.clipboard.writeText(link.url).then(
               () => setCopy("copied"),
@@ -188,17 +156,16 @@ export function OneTimeLink({ link, onDone }: { link: IssuedLink; onDone: () => 
           }}
         >
           Copy link
-        </button>
-        <button type="button" className={PRIMARY} onClick={onDone}>
+        </Button>
+        <Button variant="primary" onClick={onDone}>
           Done
-        </button>
+        </Button>
         {copy === "copied" && <span role="status">Copied.</span>}
         {copy === "failed" && <span role="alert">Copy failed. Select the field and copy it manually.</span>}
       </div>
-    </section>
+    </Notice>
   );
 }
-
 export const ADMIN_SECTIONS = [
   { href: "/admin", label: "Overview" },
   { href: "/admin/users", label: "Users" },
@@ -207,18 +174,17 @@ export const ADMIN_SECTIONS = [
   { href: "/admin/audit", label: "Audit trail" },
 ] as const;
 
-export function AdminSectionNav() {
-  return (
-    <nav aria-label="Administration" className="flex flex-wrap gap-4 border-b border-neutral-200 pb-2 text-sm">
-      {ADMIN_SECTIONS.map((section) => (
-        <Link key={section.href} href={section.href} className="underline">
-          {section.label}
-        </Link>
-      ))}
-    </nav>
-  );
+type AdminTab = Parameters<typeof AdminTabs>[0]["current"];
+
+/** Nested routes (`/admin/users/new`, `/admin/users/[id]`) mark their parent tab. */
+function adminTab(pathname: string): AdminTab {
+  const section = pathname.split("/")[2];
+  return section === "users" || section === "teams" || section === "roles" || section === "audit" ? section : "overview";
 }
 
+export function AdminSectionNav() {
+  return <AdminTabs current={adminTab(usePathname())} LinkComponent={Link} />;
+}
 export function displayName(person: { username: string; first_name: string; last_name: string }) {
   const full = `${person.first_name} ${person.last_name}`.trim();
   return full ? `${full} (${person.username})` : person.username;

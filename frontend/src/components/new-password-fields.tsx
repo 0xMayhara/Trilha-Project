@@ -1,33 +1,16 @@
-const inputClass = "rounded border border-neutral-300 px-3 py-2";
+import { Field, Input } from "@/components/ui";
 
 /** New password and its confirmation. The server applies the password rules; this only catches
  * typos before submitting. */
-export function NewPasswordFields() {
+export function NewPasswordFields({ mismatch }: { mismatch?: string | null }) {
   return (
     <>
-      <label className="flex flex-col gap-1 text-sm">
-        New password
-        <input
-          name="new_password"
-          type="password"
-          autoComplete="new-password"
-          required
-          minLength={12}
-          maxLength={1024}
-          className={inputClass}
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-sm">
-        Repeat the new password
-        <input
-          name="confirm_password"
-          type="password"
-          autoComplete="new-password"
-          required
-          maxLength={1024}
-          className={inputClass}
-        />
-      </label>
+      <Field label="New password" help="At least 12 characters.">
+        <Input name="new_password" type="password" autoComplete="new-password" required minLength={12} maxLength={1024} />
+      </Field>
+      <Field label="Repeat the new password" error={mismatch}>
+        <Input name="confirm_password" type="password" autoComplete="new-password" required maxLength={1024} />
+      </Field>
     </>
   );
 }

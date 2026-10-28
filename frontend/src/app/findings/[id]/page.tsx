@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { FindingDetail } from "@/components/finding-detail";
 import { RequireSession } from "@/components/require-session";
+import { Notice, Page } from "@/components/ui";
 
 export default async function FindingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -9,9 +10,7 @@ export default async function FindingPage({ params }: { params: Promise<{ id: st
   const valid = z.uuid().safeParse(id).success;
   return (
     <RequireSession>
-      <main className="mx-auto max-w-3xl space-y-6 p-6">
-        {valid ? <FindingDetail id={id} /> : <p role="alert">Finding not found.</p>}
-      </main>
+      <Page>{valid ? <FindingDetail id={id} /> : <Notice tone="error">Finding not found.</Notice>}</Page>
     </RequireSession>
   );
 }

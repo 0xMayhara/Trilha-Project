@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { FindingForm } from "@/components/finding-form";
 import { FindingAsset, FindingFacts } from "@/components/finding-table";
 import { LogbookEntries } from "@/components/logbook";
+import { Button, Notice, PageTitle, Panel } from "@/components/ui";
 import { ApiError } from "@/lib/api-client";
 import { fieldErrors } from "@/lib/assets";
 import { fetchSessionUser, SESSION_QUERY_KEY } from "@/lib/auth";
@@ -21,8 +22,6 @@ import {
   updateFinding,
   type FindingInput,
 } from "@/lib/findings";
-
-const BUTTON = "rounded border border-neutral-400 px-3 py-1 text-sm disabled:opacity-60";
 
 function Logbook({ userId, id, onLost }: { userId: string; id: string; onLost: () => void }) {
   const client = useQueryClient();
@@ -41,22 +40,26 @@ function Logbook({ userId, id, onLost }: { userId: string; id: string; onLost: (
       if (lostAccess(error)) onLost();
     });
   }, [logbook.error, client, userId, id, onLost]);
-  if (logbook.isPending) return <p role="status">Loading logbook...</p>;
-  if (logbook.isError) return <p role="alert">{findingErrorMessage(logbook.error)}</p>;
-  const entries = [...logbook.data.pages].reverse().flatMap((page) => page.results);
+  const entries = logbook.data ? [...logbook.data.pages].reverse().flatMap((page) => page.results) : [];
   return (
-    <section aria-label="Operational Logbook" className="space-y-2">
-      <h2 className="text-lg font-semibold">Operational Logbook</h2>
-      {logbook.hasNextPage && (
-        <button type="button" className={BUTTON} disabled={logbook.isFetchingNextPage} onClick={() => void logbook.fetchNextPage()}>
-          Load earlier
-        </button>
+    <Panel title="Operational Logbook">
+      {logbook.isPending && (
+        <p role="status" className="m-0 text-ink-muted">
+          Loading logbook...
+        </p>
       )}
-      <LogbookEntries entries={entries} />
-    </section>
+      {logbook.isError && <Notice tone="error">{findingErrorMessage(logbook.error)}</Notice>}
+      {logbook.hasNextPage && (
+        <div>
+          <Button disabled={logbook.isFetchingNextPage} onClick={() => void logbook.fetchNextPage()}>
+            Load earlier
+          </Button>
+        </div>
+      )}
+      {logbook.data && <LogbookEntries entries={entries} />}
+    </Panel>
   );
 }
-
 export function FindingDetail({ id }: { id: string }) {
   const client = useQueryClient();
   const [editing, setEditing] = useState(false);
@@ -94,36 +97,41 @@ export function FindingDetail({ id }: { id: string }) {
   }, [finding.error, client, userId, id, markLost]);
 
   if (!user) return null;
-  if (lost) return <p role="alert">You no longer have access to this finding.</p>;
-  if (finding.isPending) return <p role="status">Loading finding...</p>;
-  if (finding.isError) return <p role="alert">{findingErrorMessage(finding.error)}</p>;
+  if (lost) return <Notice tone="error">You no longer have access to this finding.</Notice>;
+  if (finding.isPending)
+    return (
+      <p role="status" className="m-0 text-ink-muted">
+        Loading finding...
+      </p>
+    );
+  if (finding.isError) return <Notice tone="error">{findingErrorMessage(finding.error)}</Notice>;
   const current = finding.data;
   const conflict = save.error instanceof ApiError && save.error.status === 409;
   return (
-    <section className="space-y-6" aria-label="Finding">
-      <h1 className="text-2xl font-semibold">{current.title}</h1>
+    <section className="flex flex-col gap-6" aria-label="Finding">
+      <PageTitle>{current.title}</PageTitle>
       <FindingFacts finding={current} />
       {save.isError && (
-        <div role="alert" className="space-y-2 text-sm text-red-700">
-          <p>{findingErrorMessage(save.error)}</p>
+        <Notice tone="error">
+          <p className="m-0">{findingErrorMessage(save.error)}</p>
           {conflict && (
-            <button
-              type="button"
-              className={BUTTON}
-              onClick={() => {
-                save.reset();
-                void finding.refetch();
-              }}
-            >
-              Reload finding
-            </button>
+            <div>
+              <Button
+                onClick={() => {
+                  save.reset();
+                  void finding.refetch();
+                }}
+              >
+                Reload finding
+              </Button>
+            </div>
           )}
-        </div>
+        </Notice>
       )}
       {current.capabilities.edit && !editing && (
-        <button type="button" className={BUTTON} onClick={() => setEditing(true)}>
-          Edit
-        </button>
+        <div>
+          <Button onClick={() => setEditing(true)}>Edit</Button>
+        </div>
       )}
       {editing && (
         <FindingForm
