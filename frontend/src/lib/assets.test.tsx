@@ -240,7 +240,11 @@ describe("operating-system catalog (SPEC-0011)", () => {
     expect(html).toContain('<option value="debian" selected="">Debian</option>');
     expect(html).toMatch(/name="os_version"[^>]*value="12"/);
     expect(html).toContain("Legacy OS text: &quot;Debian&quot; (kept as recorded)");
-    expect(html).toMatch(/<select[^>]*name="os_product"[^>]*aria-describedby="os-legacy"/);
+    // The OS select is described by the element that holds the legacy text.
+    const describedBy = /<select[^>]*aria-describedby="([^"]+)"[^>]*name="os_product"|<select[^>]*name="os_product"[^>]*aria-describedby="([^"]+)"/.exec(html);
+    const legacyId = describedBy?.[1] ?? describedBy?.[2];
+    expect(legacyId).toBeTruthy();
+    expect(html).toMatch(new RegExp(`id="${legacyId}"[^>]*>Legacy OS text: &quot;Debian&quot;`));
     expect(form(loaded, assetSchema.parse(asset))).toContain('<option value="" selected="">Not classified</option>');
   });
 

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { AssetForm } from "@/components/asset-form";
+import { Notice } from "@/components/ui";
 import {
   accessTeamsKey,
   ASSET_QUERY_KEY,
@@ -42,17 +43,18 @@ export function AssetRegistration() {
   }, [access.error, catalog.error, client]);
 
   if (!user) return null;
-  if (access.isPending) return <p role="status">Loading your teams...</p>;
-  if (access.isError) return <p role="alert">{assetErrorMessage(access.error)}</p>;
+  if (access.isPending)
+    return (
+      <p role="status" className="m-0 text-ink-muted">
+        Loading your teams...
+      </p>
+    );
+  if (access.isError) return <Notice tone="error">{assetErrorMessage(access.error)}</Notice>;
   const teams = teamsWith(access.data, "assets.add_asset", "assets.view_asset");
-  if (teams.length === 0) return <p>You cannot register assets in any of your teams.</p>;
+  if (teams.length === 0) return <p className="m-0">You cannot register assets in any of your teams.</p>;
   return (
-    <section className="space-y-3" aria-label="Register asset">
-      {create.isError && (
-        <p role="alert" className="text-sm text-red-700">
-          {assetErrorMessage(create.error)}
-        </p>
-      )}
+    <section className="flex flex-col gap-3" aria-label="Register asset">
+      {create.isError && <Notice tone="error">{assetErrorMessage(create.error)}</Notice>}
       <AssetForm
         teams={teams}
         catalog={catalog}
